@@ -20,6 +20,8 @@ goreleaser release --snapshot --clean
 
 ### 运行
 
+到`Releases`按照平台下载对应文件
+
 #### agent
 
 ```shell

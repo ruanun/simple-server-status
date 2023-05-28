@@ -1,0 +1,3 @@
+serverAddr: ws://127.0.0.1:8900/ws-report
+serverId: x12ed  #对应面板的配置
+authSecret: 1231331 #对应面板的配置

@@ -1,11 +1,8 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
-# Make sure to check the documentation at https://goreleaser.com
+project_name: simple-server-status
+version: 2
 before:
   hooks:
-    # You may remove this if you don't use go modules.
     - go mod tidy
-    # you may remove this if you don't need go generate
-    - go generate ./...
 builds:
   - binary: sssd
     main: ./dashboard/app.go
@@ -26,9 +23,7 @@ builds:
       - freebsd
     goarch:
       - amd64
-      - arm
       - arm64
-      - 386
   - binary: sssa
     main: ./agent/agent.go
     id: sssa
@@ -50,31 +45,45 @@ builds:
       - amd64
       - arm
       - arm64
-      - 386
 archives:
-  - format: tar.gz
-    rlcp: true
-    # this name template makes the OS and Arch compatible with the results of uname.
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
+  - id: sssd
+    builds:
+      - sssd
+    format: tar.gz
+    wrap_in_directory: true
+    name_template: 'sssd-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     format_overrides:
     - goos: windows
       format: zip
     files:
       - LICENSE*
       - README*.md
-      - sss-*.yaml.example
+      - sss-dashboard.yaml.example
+  - id: sssa
+    builds:
+      - sssa
+    format: tar.gz
+    wrap_in_directory: true
+    name_template: 'sssa-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE*
+      - README*.md
+      - sss-agent.yaml.example
+      - sssa.service
+dockers:
+  - id: sssd
+    dockerfile: ./Dockerfile
+    use: buildx
+    image_templates:
+      - "ruanun/sssd:{{ .Version }}"
+      - "ruanun/sssd:latest"
+      - "ruanun/sssd"
 
 checksum:
   name_template: 'checksums.txt'
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
   filters:
@@ -82,7 +91,3 @@ changelog:
       - '^docs:'
       - '^test:'
 
-# The lines beneath this are called `modelines`. See `:help modeline`
-# Feel free to remove those if you don't want/use them.
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj

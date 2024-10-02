@@ -2,54 +2,46 @@
 
 一款`极简探针` 云探针、多服务器探针
 
-### 本地构建
+### 部署
 
-* 前端
-
-```
-npm run build:prod
-```
-
-* 后端
-
-因为需要内嵌web页面，所以需要把前端`dist`目录下的文件复制到`dashboard/public/dist`目录下面
-
-```
-goreleaser release --snapshot --clean
-```
-
-### 运行
-
-到`Releases`按照平台下载对应文件
+到`Releases`按照平台下载对应文件，并解压缩
 
 #### agent
 
 ```shell
-nohup ./sssa -s ws://127.0.0.1:8900/ws-report -i test-server -a 123456 > sssa.log 2>&1 &
-```
+mkdir /etc/sssa/
+cp sssa /etc/sssa/sssa
+chmod +x /etc/sssa/sssa
+cp sss-agent.yaml.example /etc/sssa/sss-agent.yaml
+#修改 /etc/sssa/sss-agent.yaml里面的相关配置参数。
 
-* `-s` 服务器地址
-* `-i` 服务器id
-* `-a` 授权密钥
+cp sssa.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable sssa
+#启动
+systemctl start sssa
+
+#停止
+systemctl stop sssa
+#查看状态
+systemctl status sssa
+#查看日志
+journalctl -f -u sssa
+```
 
 agnet的参数可以使用配置`sss-agent.yaml`，也可以命令行直接指定；
 以上参数必须跟服务端的`sss-dashboard.yaml`里面配置的对应
 
 #### dashboard
 
-参照[sss-dashboard.yaml.example](sss-dashboard.yaml.example) 配置好`sss-dashboard.yaml` 直接运行即可
+参照[sss-dashboard.yaml.example](sss-dashboard.yaml.example) 配置好`sss-dashboard.yaml` 
+
+docker部署
 
 ```shell
-nohup ./sssd > sssd.log 2>&1 &
+docker run --name sssd  --restart=unless-stopped -d -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml -p 8900:8900 ruanun/sssd
 ```
 
-### 停止
-
-```shell
-ps -ef | grep sssa # dashboard: sssd；agent: sssa
-```
-
-查询到pid后直接kill即可
 
 ### 反代
 
@@ -102,4 +94,20 @@ location /ws-report {
 }
 ```
 
+### 本地构建
 
+* 前端
+
+```
+npm run build:prod
+```
+
+* 后端
+
+因为需要内嵌web页面，所以需要把前端`dist`目录下的文件复制到`dashboard/public/dist`目录下面
+
+```
+goreleaser release --snapshot --clean
+```
+
+构建完成，查看dist目录下的文件

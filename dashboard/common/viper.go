@@ -17,7 +17,7 @@ const (
 func InitConfig() {
 	var config string
 
-	flag.StringVar(&config, "c", "", "choose config file.")
+	flag.StringVarP(&config, "config", "c", "", "choose config file.")
 	flag.Parse()
 	if config == "" {
 		// 优先级: 命令行 > 环境变量 > 默认值

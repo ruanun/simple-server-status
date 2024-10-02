@@ -14,10 +14,12 @@ import (
 )
 
 func InitServer() *gin.Engine {
+	if !common.CONFIG.Debug {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	r := gin.Default()
-
 	//gin使用zap日志
-	r.Use(ginzap.Ginzap(zaplog.Logger, "2006-01-02 15:04:05.000", true))
+	r.Use(ginzap.Ginzap(common.LOG.Desugar(), "2006-01-02 15:04:05.000", true))
 	r.Use(ginzap.RecoveryWithZap(zaplog.Logger, true))
 
 	//静态网页

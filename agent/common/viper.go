@@ -18,7 +18,7 @@ func InitConfig() {
 
 	var config string
 
-	flag.StringVar(&config, "c", "", "choose config file.")
+	flag.StringVarP(&config, "config", "c", "", "choose config file.")
 	flag.StringP("serverAddr", "s", "", "server addr")
 	flag.StringP("serverId", "i", "", "server id")
 	flag.StringP("authSecret", "a", "", "auth Secret")

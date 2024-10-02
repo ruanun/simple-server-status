@@ -24,11 +24,11 @@ func InitLog() *zap.SugaredLogger {
 func getLogWriter() zapcore.WriteSyncer {
 	//这里我们使用zapcore.NewMultiWriteSyncer()实现同时输出到多个对象中
 	writerSyncer := zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(&lumberjack.Logger{
-		Filename:  "logs/sssa.log", // ⽇志⽂件路径
-		MaxSize:   100,             // 单位为MB,默认为512MB
-		MaxAge:    5,               // 文件最多保存多少天
-		LocalTime: true,            // 采用本地时间
-		Compress:  false,           // 是否压缩日志
+		Filename:  "./.logs/sssa.log", // ⽇志⽂件路径
+		MaxSize:   100,                // 单位为MB,默认为512MB
+		MaxAge:    5,                  // 文件最多保存多少天
+		LocalTime: true,               // 采用本地时间
+		Compress:  false,              // 是否压缩日志
 	}))
 	return writerSyncer
 }

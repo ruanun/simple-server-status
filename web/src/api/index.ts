@@ -1,10 +1,7 @@
 import axios from "axios"
 import type {AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse} from "axios";
 import {message} from "ant-design-vue";
-import 'ant-design-vue/es/message/style/css'
 import {checkStatus} from "@/api/helper/checkStatus";
-// import axios, { AxiosResponse } from 'axios'
-// import type { AxiosInstance, AxiosRequestConfig } from 'axios'
 
 
 // * 请求响应参数(不包含data)

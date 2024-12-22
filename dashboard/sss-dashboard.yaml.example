@@ -1,0 +1,16 @@
+port: 8900  #非必填
+address: 0.0.0.0 #非必填
+webSocketPath: ws-report #非必填
+servers:
+  - name: dev233 #展示到面板的名字
+    id: a1213  #id唯一
+    secret: "1a2d223f4" #授权使用，最好每台机子唯一
+  - name: local-win
+    id: x12ed
+    secret: "1231331"
+    group: win  #分组；可以不写
+  - name: dev134
+    id: 1a234m
+    secret: "vf32v2"
+    group: linux
+    countryCode: CN #国别，可以不写，不写则显示根据ip查询的结果

@@ -1,0 +1,56 @@
+project_name: simple-server-status
+version: 2
+builds:
+  - id: sssd
+    binary: sssd
+    main: ./main.go
+    hooks:
+      pre:
+        - go mod tidy
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X simple-server-status/dashboard/global.Version={{.Version}}
+      - -X simple-server-status/dashboard/global.BuiltAt={{.Date}}
+      - -X simple-server-status/dashboard/global.GitCommit={{.FullCommit}}
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - id: sssd
+    builds:
+      - sssd
+    format: tar.gz
+    wrap_in_directory: true
+    name_template: 'sssd-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - sss-dashboard.yaml.example
+dockers:
+  - id: sssd
+    dockerfile: ./Dockerfile
+    use: buildx
+    image_templates:
+      - "ruanun/sssd:{{ .Version }}"
+      - "ruanun/sssd:latest"
+      - "ruanun/sssd"
+
+checksum:
+  name_template: 'checksums.txt'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+

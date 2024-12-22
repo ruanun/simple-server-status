@@ -13,7 +13,9 @@ var httpClient = http.Client{Timeout: 10 * time.Second}
 
 func StartTask(client *WsClient) {
 	//获取服务器ip和位置
-	go getServerLocAndIp()
+	if !global.AgentConfig.DisableIP2Region {
+		go getServerLocAndIp()
+	}
 	//定时统计网络速度，流量信息
 	go statNetInfo()
 	//定时上报信息

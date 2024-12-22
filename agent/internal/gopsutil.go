@@ -192,7 +192,7 @@ func getNetInfo() *model.NetworkInfo {
 	return &netInfo
 }
 
-// 以1024作为基数
+// ByteCountIEC 以1024作为基数
 func ByteCountIEC(b uint64) string {
 	const unit = 1024
 	if b < unit {

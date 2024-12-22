@@ -9,6 +9,8 @@ type AgentConfig struct {
 	AuthSecret string `yaml:"authSecret" validate:"required"`
 	//上报间隔，单位秒；默认2秒，最小值2
 	ReportTimeInterval int `yaml:"reportTimeInterval"`
+	//禁用根据IP查询服务器区域信息，默认false
+	DisableIP2Region bool `yaml:"disableIP2Region"`
 
 	//日志配置,日志级别
 	LogPath  string `yaml:"logPath"`

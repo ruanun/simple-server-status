@@ -1,6 +1,8 @@
 ## SimpleServerStatus
 
-一款`极简探针` 云探针、多服务器探针
+一款`极简探针` 云探针、多服务器探针。基于Golang + Vue实现。
+
+演示地址：[https://sssd.ions.top/](https://sssd.ions.top/)
 
 ### 部署
 
@@ -20,7 +22,9 @@ systemctl daemon-reload
 systemctl enable sssa
 #启动
 systemctl start sssa
-
+```
+其他命令（停止、启动、查看状态、查看日志）
+```shell
 #停止
 systemctl stop sssa
 #查看状态
@@ -29,19 +33,17 @@ systemctl status sssa
 journalctl -f -u sssa
 ```
 
-agnet的参数可以使用配置`sss-agent.yaml`，也可以命令行直接指定；
-以上参数必须跟服务端的`sss-dashboard.yaml`里面配置的对应
+agnet的参数可以使用配置`sss-agent.yaml`，也可以命令行直接指定。 参数必须跟dashboard的`sss-dashboard.yaml`里面配置的对应
 
 #### dashboard
 
-参照[sss-dashboard.yaml.example](sss-dashboard.yaml.example) 配置好`sss-dashboard.yaml` 
+参照[dashboard/sss-dashboard.yaml.example](dashboard/sss-dashboard.yaml.example) 配置好`sss-dashboard.yaml`
 
 docker部署
 
 ```shell
 docker run --name sssd  --restart=unless-stopped -d -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml -p 8900:8900 ruanun/sssd
 ```
-
 
 ### 反代
 
@@ -96,18 +98,26 @@ location /ws-report {
 
 ### 本地构建
 
-* 前端
+- 前端
 
-```
+```shell
 npm run build:prod
 ```
 
-* 后端
+- 后端
 
-因为需要内嵌web页面，所以需要把前端`dist`目录下的文件复制到`dashboard/public/dist`目录下面
+    - 构建dashboard
 
-```
-goreleaser release --snapshot --clean
-```
+      因为需要内嵌web页面，所以需要把前端`dist`目录下的文件复制到`dashboard/public/dist`目录下面
+    
+      ```shell
+      cd dashboard && goreleaser release --snapshot --clean
+      ```
+
+    - 构建anent
+
+      ```shell
+      cd agent && goreleaser release --snapshot --clean
+      ```
 
 构建完成，查看dist目录下的文件

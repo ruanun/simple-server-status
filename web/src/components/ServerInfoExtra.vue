@@ -88,7 +88,7 @@
     </a-popover>
 </template>
 <script lang="ts" setup>
-import {readableBytes} from "@/utils/CommonUtil";
+import {readableBytes} from "@/utils/CommonUtil.ts";
 import {ArrowDownOutlined, ArrowUpOutlined, MoreOutlined} from '@ant-design/icons-vue';
 import type {DiskPartition, ServerInfo} from "@/api/models";
 
@@ -107,8 +107,7 @@ const columns = [
         dataIndex: 'total',
     },
 ];
-const props = defineProps<{
-    item?: ServerInfo
+defineProps<{
+  item?: ServerInfo
 }>();
-
 </script>

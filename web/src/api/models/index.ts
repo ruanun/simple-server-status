@@ -16,6 +16,8 @@ export interface ServerInfo {
     isOnline: boolean
 
     hostInfo: HostInfo;
+
+    loc: string;
 }
 
 export interface HostInfo {

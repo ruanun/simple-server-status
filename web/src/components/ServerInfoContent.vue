@@ -13,7 +13,7 @@
     <a-row>
       <a-col :span="8">CPU</a-col>
       <a-col :span="16">
-        <a-progress :strokeColor="getPercentColor(data!.cpuPercent)"
+        <a-progress style="margin-bottom: 0" :strokeColor="getPercentColor(data!.cpuPercent)"
                     :percent="Number.parseFloat(data!.cpuPercent.toFixed())"
                     :success="{parent:100,strokeColor:'red'}">
           <template #format="percent">
@@ -25,7 +25,7 @@
     <a-row>
       <a-col :span="8">RAM</a-col>
       <a-col :span="16">
-        <a-progress :strokeColor="getPercentColor(data!.RAMPercent)"
+        <a-progress style="margin-bottom: 0" :strokeColor="getPercentColor(data!.RAMPercent)"
                     :percent="Number.parseFloat(data!.RAMPercent.toFixed())"
                     :success="{parent:100,strokeColor:'red'}">
           <template #format="percent">
@@ -37,7 +37,7 @@
     <a-row>
       <a-col :span="8">Swap</a-col>
       <a-col :span="16">
-        <a-progress :strokeColor="getPercentColor(data!.SWAPPercent)"
+        <a-progress style="margin-bottom: 0" :strokeColor="getPercentColor(data!.SWAPPercent)"
                     :percent="Number.parseFloat(data!.SWAPPercent.toFixed())"
                     :success="{parent:100,strokeColor:'red'}"
         >

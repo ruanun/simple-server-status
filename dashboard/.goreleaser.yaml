@@ -37,24 +37,26 @@ archives:
     files:
       - sss-dashboard.yaml.example
 dockers:
-  - id: sssd-linux-amd64
-    goos: linux
-    goarch: amd64
+  - id: sssd
     dockerfile: ./Dockerfile
     use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64,linux/arm64"
     image_templates:
       - "ruanun/sssd:{{ .Version }}"
       - "ruanun/sssd:latest"
       - "ruanun/sssd"
-  - id: sssd-linux-arm64
-    goos: linux
-    goarch: arm64
-    dockerfile: ./Dockerfile
-    use: buildx
-    image_templates:
-      - "ruanun/sssd:{{ .Version }}"
-      - "ruanun/sssd:latest"
-      - "ruanun/sssd"
+#  - id: sssd-linux-arm64
+#    goos: linux
+#    goarch: arm64
+#    dockerfile: ./Dockerfile
+#    use: buildx
+#    build_flag_templates:
+#      - "--platform=linux/arm64"
+#    image_templates:
+#      - "ruanun/sssd:{{ .Version }}"
+#      - "ruanun/sssd:latest"
+#      - "ruanun/sssd"
 
 checksum:
   name_template: 'checksums.txt'

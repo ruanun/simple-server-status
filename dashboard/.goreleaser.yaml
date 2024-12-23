@@ -37,7 +37,18 @@ archives:
     files:
       - sss-dashboard.yaml.example
 dockers:
-  - id: sssd
+  - id: sssd-linux-amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: ./Dockerfile
+    use: buildx
+    image_templates:
+      - "ruanun/sssd:{{ .Version }}"
+      - "ruanun/sssd:latest"
+      - "ruanun/sssd"
+  - id: sssd-linux-arm64
+    goos: linux
+    goarch: arm64
     dockerfile: ./Dockerfile
     use: buildx
     image_templates:

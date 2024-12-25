@@ -18,7 +18,6 @@ const (
 )
 
 func InitConfig() *viper.Viper {
-
 	var config string
 
 	flag.StringVarP(&config, "config", "c", "", "choose config file.")
@@ -26,8 +25,9 @@ func InitConfig() *viper.Viper {
 	flag.StringP("serverId", "i", "", "server id")
 	flag.StringP("authSecret", "a", "", "auth Secret")
 	flag.Int64P("reportTimeInterval", "t", 2, "report Time Interval")
+	flag.BoolP("disableIP2Region", "r", false, "disable IP2Region")
 	flag.StringP("logPath", "l", DefaultLogPath, "log path")
-	flag.StringP("logLevel", "d", DefaultLogLevel, "log level")
+	flag.StringP("logLevel", "d", DefaultLogLevel, "log level debug|info|warn|error, default info")
 
 	flag.Parse()
 	if config == "" {

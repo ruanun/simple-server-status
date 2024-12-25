@@ -13,6 +13,7 @@ type AgentConfig struct {
 	DisableIP2Region bool `yaml:"disableIP2Region"`
 
 	//日志配置,日志级别
-	LogPath  string `yaml:"logPath"`
+	LogPath string `yaml:"logPath"`
+	//日志级别 debug,info,warn 默认info
 	LogLevel string `yaml:"logLevel"`
 }

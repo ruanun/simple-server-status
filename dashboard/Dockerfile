@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM alpine
+FROM alpine
 
 ARG TZ="Asia/Shanghai"
 

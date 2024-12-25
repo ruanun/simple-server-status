@@ -73,6 +73,13 @@ func NewRespHostData(serverInfo *ServerInfo) *RespHostData {
 
 		NetInTransfer:  serverInfo.NetworkInfo.NetInTransfer,
 		NetOutTransfer: serverInfo.NetworkInfo.NetOutTransfer,
+
+		OS:                   serverInfo.HostInfo.OS,
+		Platform:             serverInfo.HostInfo.Platform,
+		PlatformVersion:      serverInfo.HostInfo.PlatformVersion,
+		VirtualizationSystem: serverInfo.HostInfo.VirtualizationSystem,
+		KernelVersion:        serverInfo.HostInfo.KernelVersion,
+		KernelArch:           serverInfo.HostInfo.KernelArch,
 	}
 }
 

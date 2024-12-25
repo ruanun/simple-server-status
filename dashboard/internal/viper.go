@@ -67,7 +67,7 @@ func ValidConfigAndConvert2Map() {
 	validate := validator.New()
 	validErr := validate.Struct(global.CONFIG)
 	if validErr != nil {
-		global.LOG.Fatal(validErr)
+		panic(validErr)
 	}
 	if global.CONFIG.Port == 0 {
 		global.CONFIG.Port = 8900

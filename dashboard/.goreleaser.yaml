@@ -64,7 +64,7 @@ docker_manifests:
       - "ruanun/sssd:{{ .Version }}-arm64"
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: 'sssd-{{ .Version }}-checksums.txt'
 changelog:
   sort: asc
   filters:

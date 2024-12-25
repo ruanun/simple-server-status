@@ -39,7 +39,7 @@ archives:
       - sssa.service
       - sss-agent.yaml.example
 checksum:
-  name_template: 'checksums.txt'
+  name_template: 'sssa-{{ .Version }}-checksums.txt'
 changelog:
   sort: asc
   filters:

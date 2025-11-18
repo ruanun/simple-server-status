@@ -18,15 +18,17 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: 安装 pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
 
       - name: 构建前端
         run: bash scripts/build-web.sh
@@ -64,15 +66,17 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: true
 
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: 安装 pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
 
       - name: 构建前端（Unix 系统）
         if: matrix.os != 'windows-latest'

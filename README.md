@@ -6,11 +6,9 @@
 
 [![GitHub release](https://img.shields.io/github/release/ruanun/simple-server-status.svg)](https://github.com/ruanun/simple-server-status/releases)
 [![Build Status](https://github.com/ruanun/simple-server-status/workflows/CI/badge.svg)](https://github.com/ruanun/simple-server-status/actions)
-[![codecov](https://codecov.io/gh/ruanun/simple-server-status/branch/master/graph/badge.svg)](https://codecov.io/gh/ruanun/simple-server-status)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ruanun/simple-server-status)](https://goreportcard.com/report/github.com/ruanun/simple-server-status)
 [![Docker Pulls](https://img.shields.io/docker/pulls/ruanun/sssd)](https://hub.docker.com/r/ruanun/sssd)
-[![GitHub license](https://img.shields.io/github/license/ruanun/simple-server-status.svg)](https://github.com/ruanun/simple-server-status/blob/main/LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ruanun/simple-server-status)](https://github.com/ruanun/simple-server-status/blob/master/go.mod)
+[![GitHub license](https://img.shields.io/github/license/ruanun/simple-server-status.svg)](https://github.com/ruanun/simple-server-status/blob/master/LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ruanun/simple-server-status)](https://github.com/ruanun/simple-server-status)
 
 **演示地址：** [https://sssd.ions.top](https://sssd.ions.top/)
 

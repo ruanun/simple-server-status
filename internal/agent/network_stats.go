@@ -49,10 +49,13 @@ func (nsc *NetworkStatsCollector) Update() error {
 		innerNetOutTransfer += v.BytesSent
 	}
 
-	// time.Now().Unix() 返回的 int64 时间戳在正常情况下总是正数（自1970年以来的秒数）
-	// 因此转换为 uint64 是安全的
-	//nolint:gosec // G115: Unix时间戳转换为uint64是安全的，时间戳始终为正数
-	now := uint64(time.Now().Unix())
+	// 获取当前时间戳并安全转换为 uint64
+	timestamp := time.Now().Unix()
+	if timestamp < 0 {
+		// 理论上不会发生（Unix时间戳始终为正），但为安全起见进行检查
+		timestamp = 0
+	}
+	now := uint64(timestamp)
 
 	// 使用写锁保护并发写入
 	nsc.mu.Lock()

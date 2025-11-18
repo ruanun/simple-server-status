@@ -21,7 +21,7 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8
+          version: 10
 
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
@@ -69,7 +69,7 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8
+          version: 10
 
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4

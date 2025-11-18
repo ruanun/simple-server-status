@@ -2,60 +2,28 @@ import axios from "axios"
 import type {AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse} from "axios";
 import {message} from "ant-design-vue";
 import {checkStatus} from "@/api/helper/checkStatus";
+import { ResponseCode, type ApiError } from '@/types/api'
 
 
-// * 请求响应参数(不包含data)
+// * 请求响应参数(不包含data) - 保持向后兼容
 export interface Result {
-    code: string;
-    msg: string;
+    code: number;
+    message: string;
 }
 
-// * 请求响应参数(包含data)
+// * 请求响应参数(包含data) - 保持向后兼容
 export interface ResultData<T = any> extends Result {
     data: T;
 }
 
-/**
- * @description：请求配置
- */
-export enum ResultEnum {
-    SUCCESS = 200,
-    ERROR = 500,
-    OVERDUE = 401,
-    TIMEOUT = 30000,
-    TYPE = "success"
-}
-
-/**
- * @description：请求方法
- */
-export enum RequestEnum {
-    GET = "GET",
-    POST = "POST",
-    PATCH = "PATCH",
-    PUT = "PUT",
-    DELETE = "DELETE"
-}
-
-/**
- * @description：常用的contentTyp类型
- */
-export enum ContentTypeEnum {
-    // json
-    JSON = "application/json;charset=UTF-8",
-    // text
-    TEXT = "text/plain;charset=UTF-8",
-    // form-data 一般配合qs
-    FORM_URLENCODED = "application/x-www-form-urlencoded;charset=UTF-8",
-    // form-data 上传
-    FORM_DATA = "multipart/form-data;charset=UTF-8"
-}
+// 导出新的类型供外部使用
+export { ResponseCode, type ApiResponse, type ApiError } from '@/types/api'
 
 const config = {
     // 默认地址请求地址，可在 .env.*** 文件中修改
     baseURL: import.meta.env.VITE_BASE_URL as string,
     // 设置超时时间（30s）
-    timeout: ResultEnum.TIMEOUT as number,
+    timeout: 30000,
     // 跨域时候允许携带凭证
     withCredentials: true
 };
@@ -76,8 +44,8 @@ class RequestHttp {
         this.service.interceptors.response.use(
             (response: AxiosResponse) => {
                 const {data} = response;
-                if (data.code && data.code !== ResultEnum.SUCCESS) {
-                    message.error(data.msg);
+                if (data.code && data.code !== ResponseCode.SUCCESS) {
+                    message.error(data.message);
                     return Promise.reject(data);
                 }
                 return data;
@@ -91,7 +59,14 @@ class RequestHttp {
                 if (response) checkStatus(response.status);
                 // 服务器结果都没有返回(可能服务器错误可能客户端断网)，断网处理:可以跳转到断网页面
                 // if (!window.navigator.onLine) router.replace("/500");
-                return Promise.reject(error);
+
+                // 返回标准化的错误对象
+                const apiError: ApiError = {
+                    code: response?.status || ResponseCode.INTERNAL_ERROR,
+                    message: error.message || '未知错误',
+                    originalError: error
+                }
+                return Promise.reject(apiError);
             }
         );
     }

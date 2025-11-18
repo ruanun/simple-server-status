@@ -1,0 +1,154 @@
+version: '2'
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  # 禁用默认的 linters，只启用我们指定的
+  disable-all: true
+
+  enable:
+    # 核心检查（保留）
+    - govet           # Go 官方审查工具
+    - ineffassign     # 检测无效赋值
+    - staticcheck     # 静态分析（最全面的检查，已包含大部分错误检查）
+    - unused          # 检测未使用的代码
+    - gosec           # 安全检查
+    - misspell        # 拼写错误检查
+
+  # 明确禁用噪音过多的 linters
+  disable:
+    - errcheck        # 未检查错误（噪音太多）
+
+    # 已禁用（减少噪音）：
+    # - errcheck      # 错误检查（噪音太多，staticcheck 已覆盖关键部分）
+    # - gocyclo       # 复杂度检查（过于严格）
+    # - dupl          # 代码重复（误报多）
+    # - gocritic      # 代码评审（规则太多）
+    # - revive        # 风格检查（与 staticcheck 重复）
+    # - unconvert     # 类型转换（小问题）
+    # - unparam       # 未使用参数（噪音多）
+    # - predeclared   # 遮蔽检查（影响小）
+
+formatters:
+  enable:
+    - gofmt           # 格式检查
+    - goimports       # import 排序
+  settings:
+    gofmt:
+      simplify: true  # 使用 -s 简化代码
+    goimports:
+      local-prefixes: []  # 本地包前缀（可选配置）
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false  # 不检查类型断言
+    check-blank: false            # 不检查空白标识符
+    # 排除常见的可以忽略错误的函数
+    exclude-functions:
+      # 数据库相关
+      - (*database/sql.DB).Close
+      - (*database/sql.Rows).Close
+      # 文件和IO
+      - (*os.File).Close
+      - (io.Closer).Close
+      - (*net/http.Response).Body.Close
+      # WebSocket
+      - (*github.com/gorilla/websocket.Conn).Close
+      - (*github.com/olahol/melody.Session).Close
+      - (*github.com/olahol/melody.Session).Write
+      - (*github.com/olahol/melody.Session).CloseWithMsg
+      - (*github.com/olahol/melody.Melody).Broadcast
+      - (*github.com/olahol/melody.Melody).Close
+      - (*github.com/olahol/melody.Melody).HandleRequest
+      # HTTP
+      - (net/http.ResponseWriter).Write
+      # 格式化输出
+      - fmt.Fprintf
+      - fmt.Fprintln
+      # 验证器
+      - (*github.com/go-playground/validator/v10.Validate).RegisterValidation
+      # 其他
+      - (*.AgentUpdate).Update
+      - (*.NetworkStatsCollector).Update
+
+  govet:
+    enable-all: false
+    # 只启用最重要的检查
+    enable:
+      - assign
+      - atomic
+      - bools
+      - buildtag
+      - nilfunc
+      - printf
+
+  misspell:
+    locale: US
+
+  staticcheck:
+    # 排除一些检查以减少噪音
+    checks:
+      - "all"
+      - "-ST1000"  # 包注释
+      - "-ST1003"  # 首字母缩写
+      - "-SA5011"  # possible nil pointer dereference (误报多)
+    # 注意：staticcheck 不包含未检查错误的检查，那些是 errcheck 的
+
+  gosec:
+    # 排除一些低风险的检查
+    excludes:
+      - G104  # 未检查错误（由 errcheck 处理）
+      - G304  # 文件路径由用户输入（某些场景下合理）
+
+issues:
+  exclude-rules:
+    # 排除测试文件的某些检查
+    - path: _test\.go
+      linters:
+        - errcheck   # 测试中可以不检查某些错误
+        - gosec      # 测试中的安全检查不那么严格
+
+    # 排除生成的文件
+    - path: \.pb\.go$
+      linters:
+        - all
+
+    # 排除 vendor 目录
+    - path: vendor/
+      linters:
+        - all
+
+    # 排除 defer 中的 Close 调用
+    - text: "Error return value.*Close.*is not checked"
+      linters:
+        - errcheck
+
+    # 排除非关键的环境设置
+    - text: "Error return value of `os\\.(Setenv|RemoveAll)`"
+      linters:
+        - errcheck
+
+    # 排除验证器注册错误（通常在初始化时处理）
+    - text: "Error return value of.*RegisterValidation.*is not checked"
+      linters:
+        - errcheck
+
+    # 排除 WebSocket 相关的非关键错误
+    - text: "Error return value of.*\\.(HandleRequest|Broadcast|Write|CloseWithMsg)"
+      linters:
+        - errcheck
+
+  # 限制每个 linter 的问题数量（避免输出过多）
+  max-issues-per-linter: 50
+  max-same-issues: 3
+
+output:
+  formats:
+    colored-line-number:
+      path: stdout
+  print-issued-lines: true
+  print-linter-name: true

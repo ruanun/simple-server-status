@@ -1,0 +1,13 @@
+[Unit]
+Description=Simple Server Status Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/etc/sssa/
+ExecStart=/etc/sssa/sss-agent -c /etc/sssa/sss-agent.yaml
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

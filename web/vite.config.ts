@@ -44,6 +44,12 @@ export default defineConfig({
                 secure: false, // 验证 SSL 证书
                 rewrite: (path) => path,
             },
+            "/ws-frontend": {
+                target: "http://127.0.0.1:8900",
+                changeOrigin: true,  //允许跨域
+                ws: true,  // 开启 websockets 代理
+                secure: false, // 验证 SSL 证书
+            },
         }
     },
 })

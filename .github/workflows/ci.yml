@@ -1,0 +1,135 @@
+name: CI
+
+permissions:
+  contents: read
+  security-events: write
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+
+jobs:
+  lint:
+    name: 代码检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: 安装 pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: 构建前端
+        run: bash scripts/build-web.sh
+
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+          cache: true
+
+      - name: 安装 golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.6.2
+
+      - name: 运行 golangci-lint
+        run: golangci-lint run --timeout=5m ./...
+
+      - name: 运行 go vet
+        run: go vet ./...
+
+  build:
+    name: 构建测试
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: ['1.23.2']
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: 安装 pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: 构建前端（Unix 系统）
+        if: matrix.os != 'windows-latest'
+        run: bash scripts/build-web.sh
+
+      - name: 构建前端（Windows 系统）
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+          & "scripts/build-web.ps1"
+
+      - name: 构建 Agent（Windows）
+        if: matrix.os == 'windows-latest'
+        run: go build -v -o bin/sss-agent.exe ./cmd/agent
+
+      - name: 构建 Agent（非 Windows）
+        if: matrix.os != 'windows-latest'
+        run: go build -v -o bin/sss-agent ./cmd/agent
+
+      - name: 构建 Dashboard（Windows）
+        if: matrix.os == 'windows-latest'
+        run: go build -v -o bin/sss-dashboard.exe ./cmd/dashboard
+
+      - name: 构建 Dashboard（非 Windows）
+        if: matrix.os != 'windows-latest'
+        run: go build -v -o bin/sss-dashboard ./cmd/dashboard
+
+      - name: 验证二进制文件
+        if: matrix.os != 'windows-latest'
+        run: |
+          chmod +x bin/sss-agent
+          chmod +x bin/sss-dashboard
+          file bin/sss-agent
+          file bin/sss-dashboard
+
+  security:
+    name: 安全检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+          cache: true
+
+      - name: 运行 Gosec 安全扫描
+        uses: securego/gosec@master
+        with:
+          args: '-fmt sarif -out results.sarif ./...'
+        continue-on-error: true
+
+      - name: 上传 SARIF 文件
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+        if: always()

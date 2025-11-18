@@ -1,0 +1,72 @@
+# Simple Server Status - Docker Compose 配置
+# 使用方法：将此文件复制到项目根目录，然后运行 docker-compose up -d
+# 注意：需要先准备配置文件和 Caddyfile（如果使用反向代理）
+
+version: '3.8'
+
+services:
+  dashboard:
+    # 方式 1：使用官方镜像（推荐）
+    image: ruanun/sssd:latest
+
+    # 方式 2：从源码构建（取消下方注释）
+    # build:
+    #   context: ../..  # 项目根目录
+    #   dockerfile: Dockerfile
+
+    container_name: sss-dashboard
+    ports:
+      - "8900:8900"
+    volumes:
+      # 配置文件：需要先创建 sss-dashboard.yaml
+      # 示例：cp ../../configs/sss-dashboard.yaml.example ./sss-dashboard.yaml
+      - ./sss-dashboard.yaml:/app/sss-dashboard.yaml:ro
+
+      # 日志目录（可选）
+      - dashboard-logs:/app/.logs
+    environment:
+      - CONFIG=/app/sss-dashboard.yaml
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - sss-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8900/api/statistics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 可选：Caddy 反向代理（使用 HTTPS）
+  # 启动命令：docker-compose --profile with-caddy up -d
+  caddy:
+    image: caddy:alpine
+    container_name: sss-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Caddy 配置文件：需要先创建 Caddyfile
+      # 示例：cp ../../deployments/caddy/Caddyfile ./Caddyfile
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+    networks:
+      - sss-network
+    profiles:
+      - with-caddy
+
+networks:
+  sss-network:
+    driver: bridge
+
+volumes:
+  dashboard-logs:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local

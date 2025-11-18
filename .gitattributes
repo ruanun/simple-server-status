@@ -1,0 +1,33 @@
+# Git 属性配置文件
+# 规范跨平台文件编码和行尾处理
+
+# PowerShell 脚本：UTF-8 编码 + CRLF 行尾
+*.ps1 text eol=crlf working-tree-encoding=UTF-8
+
+# Shell 脚本：UTF-8 编码 + LF 行尾
+*.sh text eol=lf
+
+# Go 源代码：UTF-8 编码 + LF 行尾
+*.go text eol=lf
+
+# YAML 配置文件：UTF-8 编码 + LF 行尾
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown 文档：UTF-8 编码 + LF 行尾
+*.md text eol=lf
+
+# JSON 文件：UTF-8 编码 + LF 行尾
+*.json text eol=lf
+
+# 二进制文件：不进行任何转换
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

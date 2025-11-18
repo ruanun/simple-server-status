@@ -55,6 +55,7 @@ func (nsc *NetworkStatsCollector) Update() error {
 		// 理论上不会发生（Unix时间戳始终为正），但为安全起见进行检查
 		timestamp = 0
 	}
+	//nolint:gosec // G115: 已在上方进行负数检查，转换安全
 	now := uint64(timestamp)
 
 	// 使用写锁保护并发写入

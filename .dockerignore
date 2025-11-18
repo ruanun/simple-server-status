@@ -1,0 +1,112 @@
+# ============================================
+# Docker 构建忽略文件
+# 作用: 减少构建上下文大小，加快构建速度
+# ============================================
+
+# Git 相关
+.git
+.gitignore
+.gitattributes
+.github
+
+# 文档
+*.md
+docs/
+INSTALL.md
+LICENSE
+CHANGELOG.md
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 构建产物
+bin/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+sss-agent
+sss-dashboard
+sssd
+
+# Go 相关
+vendor/
+*.test
+*.out
+coverage.txt
+*.prof
+
+# Node.js 相关（但保留 package.json 和 package-lock.json）
+web/node_modules/
+web/dist/
+web/.nuxt/
+web/.output/
+web/.vite/
+web/.cache/
+
+# 日志
+*.log
+.logs/
+logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# 测试相关
+test/
+tests/
+*_test.go
+testdata/
+
+# 部署相关（这些文件在镜像中不需要）
+deployments/
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile.*
+*.dockerfile
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+azure-pipelines.yml
+
+# 配置文件示例（不需要打包到镜像）
+configs/
+*.yaml.example
+*.yml.example
+
+# GoReleaser
+.goreleaser.yml
+goreleaser.yml
+dist/
+
+# 脚本（构建时不需要）
+scripts/
+
+# 环境变量文件
+# 排除可能包含敏感信息的环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 但保留前端生产构建所需的配置文件（仅包含非敏感的公开配置）
+!web/.env.production
+
+# 其他敏感文件
+*.pem
+*.key
+*.crt

@@ -8,3 +8,22 @@ dist
 sss-agent.yaml
 sss-dashboard.yaml
 logs
+*.exe
+
+# 构建产物
+bin/
+*.test
+
+# 测试覆盖率
+coverage.out
+coverage.html
+*.coverprofile
+
+# 临时文件
+*.swp
+*.swo
+*~
+
+# OS 特定
+.DS_Store
+Thumbs.db

@@ -1,123 +1,346 @@
-## SimpleServerStatus
+# Simple Server Status
 
-一款`极简探针` 云探针、多服务器探针。基于Golang + Vue实现。
+<div align="center">
 
-演示地址：[https://sssd.ions.top/](https://sssd.ions.top/)
+一款**极简探针**，云探针、多服务器探针。基于 Golang + Vue 实现。
 
-### 部署
+[![GitHub release](https://img.shields.io/github/release/ruanun/simple-server-status.svg)](https://github.com/ruanun/simple-server-status/releases)
+[![Build Status](https://github.com/ruanun/simple-server-status/workflows/CI/badge.svg)](https://github.com/ruanun/simple-server-status/actions)
+[![Docker Pulls](https://img.shields.io/docker/pulls/ruanun/sssd)](https://hub.docker.com/r/ruanun/sssd)
+[![GitHub license](https://img.shields.io/github/license/ruanun/simple-server-status.svg)](https://github.com/ruanun/simple-server-status/blob/master/LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ruanun/simple-server-status)](https://github.com/ruanun/simple-server-status)
 
-到`Releases`按照平台下载对应文件，并解压缩
+**演示地址：** [https://sssd.ions.top](https://sssd.ions.top/)
 
-#### agent
+</div>
 
-```shell
-mkdir /etc/sssa/
-cp sssa /etc/sssa/sssa
-chmod +x /etc/sssa/sssa
-cp sss-agent.yaml.example /etc/sssa/sss-agent.yaml
-#修改 /etc/sssa/sss-agent.yaml里面的相关配置参数。
+## ✨ 特性
 
-cp sssa.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable sssa
-#启动
-systemctl start sssa
+- 🚀 **极简设计** - 简洁美观的 Web 界面
+- 📊 **实时监控** - 实时显示服务器状态信息
+- 🌐 **多平台支持** - 支持 Linux、Windows、macOS、FreeBSD
+- 📱 **响应式设计** - 完美适配桌面和移动设备
+- 🔒 **安全可靠** - WebSocket 加密传输，支持认证
+- 🐳 **容器化部署** - 支持 Docker 一键部署
+- 📦 **轻量级** - 单文件部署，资源占用极低
+- 🔧 **易于配置** - YAML 配置文件，简单易懂
+
+## 📊 监控指标
+
+- **系统信息** - 操作系统、架构、内核版本
+- **CPU 使用率** - 实时 CPU 占用情况
+- **内存使用** - 内存使用率和详细信息
+- **磁盘空间** - 磁盘使用情况和 I/O 统计
+- **网络流量** - 网络接口流量统计
+- **系统负载** - 系统平均负载
+- **运行时间** - 系统运行时间
+- **进程数量** - 系统进程统计
+
+## 🚀 5分钟快速开始
+
+### 步骤 1：部署 Dashboard（监控面板）
+
+```bash
+# 1. 下载配置文件
+wget https://raw.githubusercontent.com/ruanun/simple-server-status/main/configs/sss-dashboard.yaml.example -O sss-dashboard.yaml
+
+# 2. 编辑配置（设置服务器ID和密钥）
+nano sss-dashboard.yaml
+
+# 3. 启动 Dashboard
+docker run --name sssd --restart=unless-stopped -d \
+  -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml \
+  -p 8900:8900 \
+  ruanun/sssd
+
+# 4. 访问 http://your-server-ip:8900
 ```
-其他命令（停止、启动、查看状态、查看日志）
-```shell
-#停止
-systemctl stop sssa
-#查看状态
-systemctl status sssa
-#查看日志
-journalctl -f -u sssa
+
+### 步骤 2：部署 Agent（被监控服务器）
+
+**Linux/macOS/FreeBSD:**
+
+```bash
+# 一键安装
+curl -fsSL https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.sh | sudo bash
+
+# 编辑配置
+sudo nano /etc/sssa/sss-agent.yaml
+# 修改 serverAddr, serverId, authSecret
+
+# 启动服务
+sudo systemctl start sssa
+sudo systemctl enable sssa
 ```
 
-agnet的参数可以使用配置`sss-agent.yaml`，也可以命令行直接指定。 参数必须跟dashboard的`sss-dashboard.yaml`里面配置的对应
+**Windows (PowerShell 管理员模式):**
 
-#### dashboard
+```powershell
+# 一键安装
+iwr -useb https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.ps1 | iex
 
-参照[dashboard/sss-dashboard.yaml.example](dashboard/sss-dashboard.yaml.example) 配置好`sss-dashboard.yaml`
-
-docker部署
-
-```shell
-docker run --name sssd  --restart=unless-stopped -d -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml -p 8900:8900 ruanun/sssd
+# 配置文件位置: C:\Program Files\SSSA\sss-agent.yaml
+# 配置后启动 SSSA 服务
 ```
 
-### 反代
+### 步骤 3：验证
 
-**nginx**参照下面配置：
+- 访问 Dashboard：`http://your-server-ip:8900`
+- 检查服务器是否显示为在线状态
+- 查看实时数据更新
 
-以下配置中的端口（8900）和websocket路径请应`sss-dashboard.yaml`中的配置
+**遇到问题？** 参考 [故障排除指南](docs/troubleshooting.md)
 
+---
+
+## 📖 文档导航
+
+### 快速开始
+
+- 📥 **[完整部署指南](docs/getting-started.md)** - 从零开始的详细部署步骤
+- 🛠️ **[脚本使用说明](scripts/README.md)** - 安装脚本和构建脚本详解
+- 📦 **[Release 下载](https://github.com/ruanun/simple-server-status/releases)** - 预编译二进制文件
+
+### 部署方式
+
+- 🐳 **[Docker 部署](docs/deployment/docker.md)** - Docker 和 Docker Compose 完整指南
+- ⚙️ **[systemd 部署](docs/deployment/systemd.md)** - Linux systemd 服务配置
+- 🔧 **[手动安装](docs/deployment/manual.md)** - 不使用脚本的手动安装步骤
+- 🌐 **[反向代理配置](docs/deployment/proxy.md)** - Nginx/Caddy/Apache HTTPS 配置
+
+### 维护和故障排除
+
+- 🐛 **[故障排除指南](docs/troubleshooting.md)** - 常见问题和详细解决方案
+- 🔄 **[维护指南](docs/maintenance.md)** - 更新、备份、迁移、卸载
+
+### 架构和开发
+
+- 🏗️ **[架构概览](docs/architecture/overview.md)** - 系统整体架构和技术栈
+- 🔌 **[WebSocket 通信设计](docs/architecture/websocket.md)** - 双通道 WebSocket 实现详解
+- 🔄 **[数据流向](docs/architecture/data-flow.md)** - 完整数据流转过程
+- 💻 **[开发环境搭建](docs/development/setup.md)** - 本地开发环境配置
+- 🤝 **[贡献指南](docs/development/contributing.md)** - 如何贡献代码
+
+### API 文档
+
+- 🌐 **[REST API](docs/api/rest-api.md)** - HTTP API 接口说明
+- 💬 **[WebSocket API](docs/api/websocket-api.md)** - WebSocket 消息格式和协议
+
+---
+
+## ❓ 常见问题
+
+<details>
+<summary><b>Q1: 如何监控多台服务器？</b></summary>
+
+在 Dashboard 配置中添加多个服务器：
+
+```yaml
+servers:
+  - id: "server-01"
+    name: "生产服务器-1"
+    secret: "your-secret-1"
+  - id: "server-02"
+    name: "生产服务器-2"
+    secret: "your-secret-2"
 ```
-upstream sssd {
-  server 127.0.0.1:8900;
+
+在每台服务器上安装 Agent 并配置对应的 ID 和密钥。详见 [完整部署指南](docs/getting-started.md)
+
+</details>
+
+<details>
+<summary><b>Q2: 如何配置 HTTPS？</b></summary>
+
+使用反向代理（Nginx 或 Caddy）配置 HTTPS：
+
+```bash
+# Caddy（推荐，自动 HTTPS）
+status.example.com {
+    reverse_proxy localhost:8900
 }
-# map 指令根据客户端请求头中 $http_upgrade 的值构建 $connection_upgrade 的值；如果 $http_upgrade 没有匹配，默认值为 upgrade，如果 $http_upgrade 配置空字符串，值为 close
-map $http_upgrade $connection_upgrade {
-    default upgrade;
-    '' close;
-}
 ```
 
-server块中配置：
+Agent 配置改为：`serverAddr: wss://status.example.com/ws-report`
+
+详细配置参考 [反向代理指南](docs/deployment/proxy.md)
+
+</details>
+
+<details>
+<summary><b>Q3: 支持哪些操作系统？</b></summary>
+
+**完全支持：**
+- Linux（x86_64, ARM64, ARMv7）
+- Windows（x86_64, ARM64）
+- macOS（x86_64, ARM64/Apple Silicon）
+- FreeBSD（x86_64）
+
+**已测试的 Linux 发行版：**
+- Ubuntu 18.04+, Debian 10+, CentOS 7+, Rocky Linux 8+, Arch Linux, Alpine Linux
+
+</details>
+
+<details>
+<summary><b>Q4: 资源占用情况如何？</b></summary>
+
+**Agent（单个实例）：**
+- 内存：约 8-15 MB
+- CPU：< 0.5%（采集间隔 2s）
+- 磁盘：约 5 MB
+
+**Dashboard（监控 10 台服务器）：**
+- 内存：约 30-50 MB
+- CPU：< 2%
+- 磁盘：约 20 MB
+
+✅ 非常轻量，适合资源受限的环境
+
+</details>
+
+**更多问题？** 查看 [故障排除指南](docs/troubleshooting.md)
+
+---
+
+## 🏗️ 架构说明
+
+本项目采用 **Monorepo 单仓库架构**，前后端分离设计：
+
+- **Agent** - 轻量级监控客户端，部署在被监控服务器上
+- **Dashboard** - 监控面板服务端，提供 Web 界面和数据收集
+- **Web** - 前端界面，基于 Vue 3 开发
+- **pkg/model** - 共享数据模型，Agent 和 Dashboard 共用
+- **internal/shared** - 共享基础设施（日志、配置、错误处理）
+
+### 技术栈
+
+#### 后端技术
+- **Go 1.23+** - 高性能编译型语言，跨平台支持
+- **Gin** - 轻量级 HTTP Web 框架，高性能路由
+- **Melody** - 优雅的 WebSocket 服务端库
+- **Gorilla WebSocket** - 成熟的 WebSocket 客户端实现
+- **Viper** - 灵活的配置管理，支持热加载
+- **Zap** - 高性能结构化日志库
+- **gopsutil** - 跨平台系统信息采集库
+
+#### 前端技术
+- **Vue 3** - 渐进式 JavaScript 框架（Composition API）
+- **TypeScript** - 类型安全的 JavaScript 超集
+- **Ant Design Vue** - 企业级 UI 组件库
+- **Vite** - 下一代前端构建工具，开发体验极佳
+- **Axios** - Promise 基于的 HTTP 客户端
+
+#### 架构设计
+- **Monorepo** - 单仓库多模块管理，统一依赖
+- **标准 Go 项目布局** - cmd/、internal/、pkg/ 清晰分离
+- **依赖注入** - 松耦合设计，易于测试和扩展
+- **WebSocket 双通道** - 实时双向通信，低延迟
+
+---
+
+## 📊 系统要求
+
+### Agent
+- **内存**: 最低 10MB
+- **CPU**: 最低 0.1%
+- **磁盘**: 最低 5MB
+- **网络**: 支持 WebSocket 连接
+
+### Dashboard
+- **内存**: 最低 20MB
+- **CPU**: 最低 0.5%
+- **磁盘**: 最低 10MB
+- **端口**: 默认 8900（可配置）
+
+---
+
+## 🛠️ 开发构建
+
+### 环境要求
+
+- Go 1.23+
+- Node.js 20+
+- pnpm（推荐）或 npm
+
+### 构建步骤
+
+```bash
+# 克隆项目
+git clone https://github.com/ruanun/simple-server-status.git
+cd simple-server-status
+
+# 使用 Makefile（推荐）
+make build-web       # 构建前端
+make build-agent     # 构建 Agent
+make build-dashboard # 构建 Dashboard（包含前端）
+make build           # 构建所有模块
+
+# 或使用构建脚本
+bash scripts/build-web.sh
+bash scripts/build-dashboard.sh
+```
+
+**详细构建说明：** [scripts/README.md](scripts/README.md)
+
+### 开发模式
+
+```bash
+# 前端开发（热重载）
+make dev-web
+
+# 后端开发
+make build-dashboard-only
+./bin/sss-dashboard
+```
+
+### 项目结构
 
 ```
-location / {
-    proxy_set_header HOST $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_pass http://sssd;
-}
- #代理websocket，这里的path请参考sss-dashboard.yaml 中的webSocketPath 
-location /ws-report {
-    # 代理转发目标
-    proxy_pass http://sssd;
-
-    # 请求服务器升级协议为 WebSocket
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-
-    # 设置读写超时时间，默认 60s 无数据连接将会断开
-    proxy_read_timeout 300s;
-    proxy_send_timeout 300s;
-
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Host $host:$server_port;
-    proxy_set_header X-Forwarded-Server $host;
-    proxy_set_header X-Forwarded-Port $server_port;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
+simple-server-status/
+├── cmd/                    # 程序入口
+│   ├── agent/             # Agent 启动入口
+│   └── dashboard/         # Dashboard 启动入口
+├── internal/              # 内部包
+│   ├── agent/             # Agent 实现
+│   ├── dashboard/         # Dashboard 实现
+│   └── shared/            # 共享基础设施
+├── pkg/model/             # 共享数据模型
+├── configs/               # 配置文件示例
+├── deployments/           # 部署配置
+├── web/                   # Vue 3 前端
+└── go.mod                 # 统一依赖管理
 ```
 
-### 本地构建
+---
 
-- 前端
+## 🤝 贡献
 
-```shell
-npm run build:prod
-```
+欢迎提交 Issue 和 Pull Request！
 
-- 后端
+1. Fork 本项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
 
-    - 构建dashboard
+详见 [贡献指南](docs/development/contributing.md)
 
-      因为需要内嵌web页面，所以需要把前端`dist`目录下的文件复制到`dashboard/public/dist`目录下面
-    
-      ```shell
-      cd dashboard && goreleaser release --snapshot --clean
-      ```
+---
 
-    - 构建anent
+## 📄 许可证
 
-      ```shell
-      cd agent && goreleaser release --snapshot --clean
-      ```
+本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
 
-构建完成，查看dist目录下的文件
+---
+
+## ⭐ Star History
+
+如果这个项目对你有帮助，请给个 Star ⭐
+
+---
+
+<div align="center">
+
+**[🏠 首页](https://github.com/ruanun/simple-server-status)** • **[📖 文档](docs/getting-started.md)** • **[🚀 演示](https://sssd.ions.top/)** • **[📦 下载](https://github.com/ruanun/simple-server-status/releases)**
+
+</div>

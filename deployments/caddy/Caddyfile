@@ -1,0 +1,73 @@
+# Simple Server Status Caddyfile
+# Caddy 自动处理 HTTPS 证书
+
+# 主站点配置
+# 将 localhost 替换为你的域名，如 example.com
+localhost {
+    # 反向代理到 Dashboard
+    reverse_proxy dashboard:8900
+    
+    # 启用压缩
+    encode gzip
+    
+    # 安全头
+    header {
+        # 安全相关头部
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        
+        # 移除服务器信息
+        -Server
+    }
+    
+    # 静态资源缓存
+    @static {
+        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
+    }
+    header @static {
+        Cache-Control "public, max-age=31536000, immutable"
+    }
+    
+    # WebSocket 支持（Caddy 自动处理 WebSocket 升级）
+    # 无需特殊配置，Caddy 会自动检测和处理 WebSocket 连接
+    
+    # 日志配置
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+        format json
+    }
+    
+    # 健康检查端点
+    handle /health {
+        respond "healthy" 200
+    }
+}
+
+# 如果需要多个域名，可以添加更多配置块
+# example.com {
+#     reverse_proxy dashboard:8900
+#     encode gzip
+# }
+
+# 全局选项
+{
+    # 自动 HTTPS
+    auto_https on
+    
+    # 邮箱用于 Let's Encrypt（生产环境请修改）
+    email admin@example.com
+    
+    # 管理端点（可选，用于监控）
+    admin localhost:2019
+    
+    # 日志级别
+    log {
+        level INFO
+    }
+}

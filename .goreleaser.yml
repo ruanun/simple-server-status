@@ -1,0 +1,221 @@
+# GoReleaser 配置文件
+# 文档: https://goreleaser.com
+# 作者: ruanun
+# 版本: 2.0.0
+
+version: 2
+
+before:
+  hooks:
+    # 在构建前确保依赖是最新的
+    - go mod tidy
+    # 注意：前端构建已在 GitHub Actions 工作流中通过 scripts/build-web.sh 完成
+    # 本地使用时，请先运行: make build-web 或 bash scripts/build-web.sh
+
+builds:
+  # Agent 构建配置
+  - id: agent
+    main: ./cmd/agent
+    binary: sss-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+      - goos: darwin
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    flags:
+      - -trimpath
+
+  # Dashboard 构建配置
+  - id: dashboard
+    main: ./cmd/dashboard
+    binary: sss-dashboard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+      - goos: darwin
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    flags:
+      - -trimpath
+
+archives:
+  # Agent 独立包
+  - id: agent
+    builds: [agent]
+    format: tar.gz
+    wrap_in_directory: true
+    name_template: >-
+      sss-agent_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - configs/sss-agent.yaml.example
+      - deployments/systemd/sssa.service
+
+  # Dashboard 独立包
+  - id: dashboard
+    builds: [dashboard]
+    format: tar.gz
+    wrap_in_directory: true
+    name_template: >-
+      sss-dashboard_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - configs/sss-dashboard.yaml.example
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - 'merge conflict'
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+  groups:
+    - title: '🎉 新功能'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: '🐛 Bug 修复'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: '📝 文档更新'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: '🚀 性能优化'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: '♻️ 代码重构'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: '其他更改'
+      order: 999
+
+release:
+  github:
+    owner: ruanun
+    name: simple-server-status
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## Simple Server Status v{{.Version}}
+
+    🎉 欢迎使用 Simple Server Status！
+
+    ### 快速安装
+
+    **Agent 一键安装：**
+    ```bash
+    # Linux/macOS/FreeBSD
+    curl -fsSL https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.sh | bash
+
+    # Windows (PowerShell)
+    iwr -useb https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.ps1 | iex
+    ```
+
+    **Dashboard Docker 部署：**
+    ```bash
+    docker run --name sssd -d -p 8900:8900 -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml ruanun/sssd:{{.Version}}
+    ```
+
+    ### 📦 下载说明
+
+    - `sss-agent`: 监控代理客户端
+    - `sss-dashboard`: 监控面板服务端
+
+    请根据你的操作系统和架构选择合适的版本下载。
+
+  footer: |
+    ---
+
+    **完整文档：** https://github.com/ruanun/simple-server-status/blob/master/README.md
+
+    **问题反馈：** https://github.com/ruanun/simple-server-status/issues
+
+    感谢使用 Simple Server Status！ ⭐
+
+# 注释掉 nfpms 部分，如果需要生成 Linux 包可以取消注释
+# nfpms:
+#   - id: default
+#     package_name: simple-server-status
+#     homepage: https://github.com/ruanun/simple-server-status
+#     maintainer: ruan <your-email@example.com>
+#     description: 极简服务器监控探针
+#     license: MIT
+#     formats:
+#       - deb
+#       - rpm
+#     bindir: /usr/local/bin

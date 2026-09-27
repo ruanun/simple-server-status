@@ -2,8 +2,6 @@ version: "2"
 
 run:
   tests: true
-  build-tags:
-    - integration
 
 linters:
   # 禁用默认的 linters，只启用我们指定的
@@ -39,8 +37,6 @@ linters:
         # 格式化输出
         - fmt.Fprintf
         - fmt.Fprintln
-        # 验证器
-        - (*github.com/go-playground/validator/v10.Validate).RegisterValidation
 
     govet:
       enable-all: false
@@ -85,16 +81,6 @@ linters:
           - errcheck   # 测试中可以不检查某些错误
           - gosec      # 测试中的安全检查不那么严格
 
-      # 排除生成的文件
-      - path: \.pb\.go$
-        linters:
-          - all
-
-      # 排除 vendor 目录
-      - path: vendor/
-        linters:
-          - all
-
       # 排除 defer 中的 Close 调用
       - text: "Error return value.*Close.*is not checked"
         linters:
@@ -104,16 +90,11 @@ linters:
       - text: "Error return value of `os\\.(Setenv|RemoveAll)`"
         linters:
           - errcheck
-
-      # 排除验证器注册错误（通常在初始化时处理）
-      - text: "Error return value of.*RegisterValidation.*is not checked"
-        linters:
-          - errcheck
     paths:
       - third_party$
       - builtin$
       - examples$
-      - ^web/  # 旧前端目录，其 node_modules 含第三方 Go 文件
+      - ^web/  # 前端目录，其 node_modules 含第三方 Go 文件
 
 issues:
   # 限制每个 linter 的问题数量（避免输出过多）
@@ -135,4 +116,4 @@ formatters:
       - third_party$
       - builtin$
       - examples$
-      - ^web/  # 旧前端目录，其 node_modules 含第三方 Go 文件
+      - ^web/  # 前端目录，其 node_modules 含第三方 Go 文件

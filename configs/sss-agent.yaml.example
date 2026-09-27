@@ -1,6 +1,14 @@
-serverAddr: ws://127.0.0.1:8900/ws-report
-serverId: x12ed  #对应面板的配置
-authSecret: 1231331 #对应面板的配置
+# Simple Server Status Agent 配置
+# 命令行参数与环境变量（SSS_DASHBOARD、SSS_ID、SSS_SECRET 等）优先于本文件
 
-disableIP2Region: false #非必填，禁用根据IP查询服务器区域信息，默认false
-logLevel: info #非必填，日志级别 默认info
+# Dashboard 地址
+dashboard: "https://status.example.com"
+# 在 Dashboard 后台创建服务器后获得
+id: "your-server-id"
+secret: "your-secret"
+# 是否通过 Cloudflare trace 探测国家代码
+detect_country: true
+# 日志级别：debug/info/warn/error
+log_level: "info"
+# 日志文件路径，留空只输出到标准输出
+log_file: ""

@@ -1,0 +1,81 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/ruanun/simple-server-status/internal/dashboard/auth"
+)
+
+type loginReq struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (a *API) login(c *gin.Context) {
+	key := c.ClientIP()
+	if !a.Limiter.Acquire(key) { // 预占一次尝试，失败无需再计数
+		fail(c, http.StatusTooManyRequests, "too_many_attempts", "登录失败次数过多，请 5 分钟后再试")
+		return
+	}
+	var req loginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "bad_request", "请求格式错误")
+		return
+	}
+	u, err := a.Store.GetUserByName(c.Request.Context(), req.Username)
+	if err != nil || !auth.CheckPassword(u.PasswordHash, req.Password) {
+		fail(c, http.StatusUnauthorized, "invalid_credentials", "用户名或密码错误")
+		return
+	}
+	a.Limiter.Reset(key)
+	tok, err := a.Auth.Issue(u.ID, u.TokenVersion)
+	if err != nil {
+		a.internal(c, "签发登录凭证失败", err)
+		return
+	}
+	respond(c, gin.H{"token": tok, "username": u.Username})
+}
+
+func (a *API) me(c *gin.Context) {
+	respond(c, gin.H{"username": currentUser(c).Username})
+}
+
+type passwordReq struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+func (a *API) changePassword(c *gin.Context) {
+	u := currentUser(c)
+	var req passwordReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "bad_request", "请求格式错误")
+		return
+	}
+	if !auth.CheckPassword(u.PasswordHash, req.OldPassword) {
+		fail(c, http.StatusBadRequest, "wrong_password", "原密码错误")
+		return
+	}
+	if len(req.NewPassword) < auth.MinPasswordLen {
+		fail(c, http.StatusBadRequest, "weak_password", "新密码至少 8 位")
+		return
+	}
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		a.internal(c, "计算密码哈希失败", err)
+		return
+	}
+	if err := a.Store.SetPassword(c.Request.Context(), u.ID, hash); err != nil {
+		a.internal(c, "保存密码失败", err)
+		return
+	}
+	// 旧 token 已失效，立即断开该用户已登录的浏览器推送连接（前端用新 token 重连）
+	a.bc.kickUser(u.ID)
+	tok, err := a.Auth.Issue(u.ID, u.TokenVersion+1)
+	if err != nil {
+		a.internal(c, "签发登录凭证失败", err)
+		return
+	}
+	respond(c, gin.H{"token": tok})
+}

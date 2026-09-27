@@ -5,6 +5,15 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 未发布
+
+整体重写，不兼容 1.x 的配置与数据。
+
+- Dashboard：gin + SQLite（纯 Go），分级降采样的历史数据（24 小时分钟级、7 天 10 分钟级），月流量累计与重置日，JWT 登录与限流，导入导出（含密钥，便于整机迁移）。
+- Agent：WebSocket 长连接上报，参数由 Dashboard 下发，支持 Linux systemd 与 Windows 服务。
+- 前端：React 19 + shadcn/ui 重写，极简单色风格，独立详情页与历史图表，中英文与亮暗主题。
+- 部署：Docker 多架构镜像；安装脚本参数为 `--dashboard/--id/--secret`，后台可随时查看安装命令。
+
 ## [1.2.0] - 2025-11-15
 
 这是一个重大功能更新版本，包含全面的架构重构、功能增强和文档完善。

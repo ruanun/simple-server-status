@@ -1,384 +1,128 @@
-﻿# Simple Server Status Agent Windows 安装脚本
-# PowerShell 脚本，支持 Windows 系统
-
+﻿# Simple Server Status Agent 安装脚本（Windows 服务）
+# 作者: ruan
+# 用法（管理员 PowerShell）:
+#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; $f="$env:TEMP\install-agent.ps1"; iwr -useb <脚本地址> -OutFile $f; & $f -Dashboard <地址> -Id <ID> -Secret <密钥>
+#   & $f -Uninstall
 param(
-    [switch]$Uninstall,
-    [switch]$Help,
-    [string]$Version = "",
-    [string]$InstallDir = "C:\Program Files\SSSA"
+    [string]$Dashboard,
+    [string]$Id,
+    [string]$Secret,
+    [string]$Version = 'latest',
+    [switch]$Uninstall
 )
 
-# 项目信息
-$REPO = if ($env:REPO) { $env:REPO } else { "ruanun/simple-server-status" }
-$BINARY_NAME = "sss-agent.exe"
-$SERVICE_NAME = "SSSA"
-$CONFIG_FILE = "sss-agent.yaml"
+$ErrorActionPreference = 'Stop'
+$Repo = 'ruanun/simple-server-status'
+$ServiceName = 'sss-agent'
+$InstallDir = Join-Path $env:ProgramFiles 'sss-agent'
+$BinPath = Join-Path $InstallDir 'sss-agent.exe'
+$ConfigPath = Join-Path $InstallDir 'sss-agent.yaml'
+$LogPath = Join-Path $InstallDir 'logs\agent.log'
 
-# 函数：打印彩色信息
-function Write-Info {
-    param([string]$Message)
-    Write-Host "[INFO] $Message" -ForegroundColor Blue
+# Get-DownloadUrl 返回指定版本与架构的 Agent 压缩包地址
+function Get-DownloadUrl([string]$Ver, [string]$Arch) {
+    $file = "sss-agent_windows_$Arch.zip"
+    if ($Ver -eq 'latest') { return "https://github.com/$Repo/releases/latest/download/$file" }
+    return "https://github.com/$Repo/releases/download/$Ver/$file"
 }
 
-function Write-Success {
-    param([string]$Message)
-    Write-Host "[SUCCESS] $Message" -ForegroundColor Green
+# ConvertTo-YamlQuoted 用 YAML 单引号包裹字符串，内部单引号写成两个
+function ConvertTo-YamlQuoted([string]$Value) {
+    return "'" + $Value.Replace("'", "''") + "'"
 }
 
-function Write-Warning {
-    param([string]$Message)
-    Write-Host "[WARNING] $Message" -ForegroundColor Yellow
+function Get-AgentConfig([string]$DashboardUrl, [string]$ServerId, [string]$ServerSecret, [string]$LogFile) {
+    return @(
+        '# Simple Server Status Agent 配置（由安装脚本生成）'
+        "dashboard: $(ConvertTo-YamlQuoted $DashboardUrl)"
+        "id: $(ConvertTo-YamlQuoted $ServerId)"
+        "secret: $(ConvertTo-YamlQuoted $ServerSecret)"
+        'detect_country: true'
+        'log_level: info'
+        "log_file: $(ConvertTo-YamlQuoted $LogFile)"
+    ) -join "`n"
 }
 
-function Write-Error {
-    param([string]$Message)
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
+# Assert-InstallArgs 校验必填参数，返回去掉末尾斜杠的 Dashboard 地址
+function Assert-InstallArgs([string]$DashboardUrl, [string]$ServerId, [string]$ServerSecret) {
+    if (-not $DashboardUrl) { throw '缺少 -Dashboard' }
+    if (-not $ServerId) { throw '缺少 -Id' }
+    if (-not $ServerSecret) { throw '缺少 -Secret' }
+    if ($DashboardUrl -notmatch '^https?://') { throw 'Dashboard 地址需以 http:// 或 https:// 开头' }
+    return $DashboardUrl.TrimEnd('/')
 }
 
-# 函数：检查管理员权限
-function Test-Administrator {
-    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-# 函数：检查管理员权限
-function Assert-Administrator {
-    if (-not (Test-Administrator)) {
-        Write-Error "此脚本需要管理员权限运行"
-        Write-Info "请以管理员身份运行 PowerShell"
-        exit 1
+function Assert-Admin {
+    $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw '请在管理员 PowerShell 中运行'
     }
 }
 
-# 函数：检测系统架构
-function Get-SystemArchitecture {
-    $arch = $env:PROCESSOR_ARCHITECTURE
-    switch ($arch) {
-        "AMD64" { return "amd64" }
-        "ARM64" { return "arm64" }
-        "x86" { return "386" }
-        default {
-            Write-Error "不支持的架构: $arch"
-            exit 1
-        }
+# Remove-AgentService 停止并删除已有服务，等待服务管理器完成删除
+function Remove-AgentService {
+    if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) { return }
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    sc.exe delete $ServiceName | Out-Null
+    for ($i = 0; $i -lt 20 -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue); $i++) {
+        Start-Sleep -Milliseconds 500
     }
 }
 
-# 函数：获取最新版本
-function Get-LatestVersion {
-    Write-Info "获取最新版本信息..."
-
-    try {
-        $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest" -Method Get
-        $version = $response.tag_name
-
-        if ([string]::IsNullOrEmpty($version)) {
-            throw "无法获取版本信息"
-        }
-
-        Write-Info "最新版本: $version"
-        return $version
-    }
-    catch {
-        Write-Error "无法获取最新版本信息: $($_.Exception.Message)"
-        exit 1
-    }
-}
-
-# 函数：下载文件
-function Download-File {
-    param(
-        [string]$Url,
-        [string]$OutputPath
-    )
-
-    Write-Info "下载: $Url"
-
-    try {
-        # 创建目录（如果不存在）
-        $dir = Split-Path $OutputPath -Parent
-        if (!(Test-Path $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        }
-
-        # 下载文件
-        Invoke-WebRequest -Uri $Url -OutFile $OutputPath -UseBasicParsing
-        Write-Success "下载完成: $OutputPath"
-    }
-    catch {
-        Write-Error "下载失败: $($_.Exception.Message)"
-        exit 1
-    }
-}
-
-# 函数：解压ZIP文件
-function Expand-ZipFile {
-    param(
-        [string]$ZipPath,
-        [string]$ExtractPath
-    )
-
-    Write-Info "解压文件: $ZipPath"
-
-    try {
-        # 确保目标目录存在
-        if (!(Test-Path $ExtractPath)) {
-            New-Item -ItemType Directory -Path $ExtractPath -Force | Out-Null
-        }
-
-        # 解压文件
-        Expand-Archive -Path $ZipPath -DestinationPath $ExtractPath -Force
-        Write-Success "解压完成"
-    }
-    catch {
-        Write-Error "解压失败: $($_.Exception.Message)"
-        exit 1
-    }
-}
-
-# 函数：安装Windows服务
-function Install-WindowsService {
-    param(
-        [string]$ServicePath,
-        [string]$ConfigPath
-    )
-
-    Write-Info "安装Windows服务..."
-
-    try {
-        # 检查服务是否已存在
-        $existingService = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
-        if ($existingService) {
-            Write-Info "服务已存在，先停止并删除..."
-            Stop-Service -Name $SERVICE_NAME -Force -ErrorAction SilentlyContinue
-            & sc.exe delete $SERVICE_NAME
-            Start-Sleep -Seconds 2
-        }
-
-        # 创建服务
-        $serviceBinary = "`"$ServicePath`" -c `"$ConfigPath`""
-        & sc.exe create $SERVICE_NAME binPath= $serviceBinary start= auto DisplayName= "Simple Server Status Agent"
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Windows服务安装成功"
-            Write-Info "服务管理命令:"
-            Write-Info "  启动服务: Start-Service -Name $SERVICE_NAME"
-            Write-Info "  停止服务: Stop-Service -Name $SERVICE_NAME"
-            Write-Info "  查看状态: Get-Service -Name $SERVICE_NAME"
-        } else {
-            Write-Warning "服务安装失败，可以手动运行程序"
-        }
-    }
-    catch {
-        Write-Warning "服务安装失败: $($_.Exception.Message)"
-        Write-Info "可以手动运行程序"
-    }
-}
-
-# 函数：下载并安装
 function Install-Agent {
-    $arch = Get-SystemArchitecture
-    Write-Info "检测到系统架构: $arch"
+    $dash = Assert-InstallArgs $Dashboard $Id $Secret
+    Assert-Admin
+    if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw "不支持的架构: $env:PROCESSOR_ARCHITECTURE" }
 
-    # 获取版本
-    if ([string]::IsNullOrEmpty($Version)) {
-        $Version = Get-LatestVersion
-    } else {
-        Write-Info "使用指定版本: $Version"
-    }
-
-    # 构建下载URL（与 GoReleaser 格式一致）
-    $archiveName = "sss-agent_${Version}_windows_${arch}.zip"
-    $downloadUrl = "https://github.com/$REPO/releases/download/$Version/$archiveName"
-
-    # 创建临时目录
-    $tempDir = Join-Path $env:TEMP "sssa-install-$(Get-Random)"
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = 'SilentlyContinue'
+    $url = Get-DownloadUrl $Version 'amd64'
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("sss-agent-" + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
-        # 下载文件
-        $zipPath = Join-Path $tempDir $archiveName
-        Download-File -Url $downloadUrl -OutputPath $zipPath
+        Write-Host "下载 Agent：$url"
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile (Join-Path $tmp 'agent.zip')
+        Expand-Archive -Path (Join-Path $tmp 'agent.zip') -DestinationPath $tmp -Force
 
-        # 解压文件
-        $extractPath = Join-Path $tempDir "extract"
-        Expand-ZipFile -ZipPath $zipPath -ExtractPath $extractPath
-
-        # 查找解压后的目录
-        $extractedDir = Get-ChildItem -Path $extractPath -Directory | Where-Object { $_.Name -like "sss-agent*" } | Select-Object -First 1
-        if (-not $extractedDir) {
-            Write-Error "无法找到解压后的目录"
-            exit 1
-        }
-
-        $sourceDir = $extractedDir.FullName
-
-        # 创建安装目录
-        Write-Info "创建安装目录: $InstallDir"
-        if (!(Test-Path $InstallDir)) {
-            New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-        }
-
-        # 复制二进制文件
-        Write-Info "安装二进制文件..."
-        $sourceBinary = Join-Path $sourceDir $BINARY_NAME
-        $targetBinary = Join-Path $InstallDir $BINARY_NAME
-
-        if (Test-Path $sourceBinary) {
-            Copy-Item -Path $sourceBinary -Destination $targetBinary -Force
-            Write-Success "二进制文件安装完成"
-        } else {
-            Write-Error "找不到二进制文件: $sourceBinary"
-            exit 1
-        }
-
-        # 复制配置文件示例
-        $sourceConfig = Join-Path $sourceDir "configs/sss-agent.yaml.example"
-        $targetConfig = Join-Path $InstallDir $CONFIG_FILE
-
-        if ((Test-Path $sourceConfig) -and !(Test-Path $targetConfig)) {
-            Write-Info "复制配置文件示例..."
-            Copy-Item -Path $sourceConfig -Destination $targetConfig -Force
-            Write-Warning "请编辑配置文件: $targetConfig"
-        } elseif (Test-Path $targetConfig) {
-            Write-Info "配置文件已存在，跳过复制"
-        }
-
-        # 添加到系统PATH
-        Write-Info "添加到系统PATH..."
-        $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        if ($currentPath -notlike "*$InstallDir*") {
-            $newPath = "$currentPath;$InstallDir"
-            [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            Write-Success "已添加到系统PATH"
-        } else {
-            Write-Info "已在系统PATH中"
-        }
-
-        # 安装Windows服务
-        Install-WindowsService -ServicePath $targetBinary -ConfigPath $targetConfig
-
-        Write-Success "安装完成！"
+        # 已安装时先删除旧服务，再覆盖程序与配置
+        Remove-AgentService
+        New-Item -ItemType Directory -Path (Split-Path $LogPath) -Force | Out-Null
+        Copy-Item (Join-Path $tmp 'sss-agent.exe') $BinPath -Force
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
-    finally {
-        # 清理临时文件
-        if (Test-Path $tempDir) {
-            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+
+    [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig $dash $Id $Secret $LogPath), (New-Object Text.UTF8Encoding $false))
+    # 配置含密钥：仅 SYSTEM（S-1-5-18）与 Administrators（S-1-5-32-544）可访问，用 SID 避免中文系统下组名不同
+    icacls $ConfigPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
+
+    New-Service -Name $ServiceName -DisplayName 'Simple Server Status Agent' -StartupType Automatic `
+        -BinaryPathName "`"$BinPath`" --config `"$ConfigPath`"" | Out-Null
+    # 异常退出（含非 0 退出码）时 5 秒后自动重启；Dashboard 要求停止时以 0 退出，不会被重启
+    sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/restart/5000 | Out-Null
+    sc.exe failureflag $ServiceName 1 | Out-Null
+    Start-Service -Name $ServiceName
+
+    Start-Sleep -Seconds 2
+    if ((Get-Service -Name $ServiceName).Status -ne 'Running') {
+        throw "Agent 未能启动，请查看日志：$LogPath"
     }
+    Write-Host '安装完成，Agent 已启动' -ForegroundColor Green
+    Write-Host "  查看状态: Get-Service $ServiceName"
+    Write-Host "  查看日志: Get-Content '$LogPath' -Tail 50"
+    Write-Host '  卸载:     & $f -Uninstall'
 }
 
-# 函数：卸载
 function Uninstall-Agent {
-    Write-Info "开始卸载 Simple Server Status Agent..."
-
-    # 停止并删除服务
-    $service = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
-    if ($service) {
-        Write-Info "停止并删除Windows服务..."
-        Stop-Service -Name $SERVICE_NAME -Force -ErrorAction SilentlyContinue
-        & sc.exe delete $SERVICE_NAME
-        Write-Success "服务已删除"
-    }
-
-    # 从PATH中移除
-    Write-Info "从系统PATH中移除..."
-    $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    if ($currentPath -like "*$InstallDir*") {
-        $newPath = $currentPath -replace [regex]::Escape(";$InstallDir"), "" -replace [regex]::Escape("$InstallDir;"), ""
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-        Write-Success "已从系统PATH中移除"
-    }
-
-    # 删除安装目录
-    if (Test-Path $InstallDir) {
-        $response = Read-Host "是否删除安装目录 $InstallDir ? (配置文件将被删除) [y/N]"
-        if ($response -eq 'y' -or $response -eq 'Y') {
-            Remove-Item -Path $InstallDir -Recurse -Force
-            Write-Success "安装目录已删除"
-        } else {
-            $binaryPath = Join-Path $InstallDir $BINARY_NAME
-            if (Test-Path $binaryPath) {
-                Remove-Item -Path $binaryPath -Force
-            }
-            Write-Info "仅删除二进制文件，配置文件已保留"
-        }
-    }
-
-    Write-Success "卸载完成！"
+    Assert-Admin
+    Remove-AgentService
+    Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    # Agent 启动失败时会注册同名事件日志来源，一并删除
+    Remove-Item "HKLM:\SYSTEM\CurrentControlSet\Services\EventLog\Application\$ServiceName" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host 'Agent 已卸载' -ForegroundColor Green
 }
 
-# 函数：显示使用说明
-function Show-Usage {
-    Write-Info "安装完成后的使用说明:"
-    Write-Host ""
-    Write-Info "1. 编辑配置文件:"
-    Write-Host "   notepad `"$InstallDir\$CONFIG_FILE`""
-    Write-Host ""
-    Write-Info "2. 配置说明:"
-    Write-Host "   - serverAddr: Dashboard服务器WebSocket地址"
-    Write-Host "   - serverId: 服务器ID (在Dashboard中配置)"
-    Write-Host "   - authSecret: 认证密钥 (与Dashboard配置一致)"
-    Write-Host ""
-    Write-Info "3. 启动服务:"
-    Write-Host "   Start-Service -Name $SERVICE_NAME"
-    Write-Host ""
-    Write-Info "4. 查看服务状态:"
-    Write-Host "   Get-Service -Name $SERVICE_NAME"
-    Write-Host ""
-    Write-Info "5. 手动运行 (如果服务安装失败):"
-    Write-Host "   & `"$InstallDir\$BINARY_NAME`" -c `"$InstallDir\$CONFIG_FILE`""
-    Write-Host ""
-    Write-Info "6. 验证安装:"
-    Write-Host "   sss-agent --version"
-    Write-Host ""
+# 以点号方式加载（测试）时只定义函数
+if ($MyInvocation.InvocationName -ne '.') {
+    if ($Uninstall) { Uninstall-Agent } else { Install-Agent }
 }
-
-# 函数：显示帮助
-function Show-Help {
-    Write-Host "Simple Server Status Agent Windows 安装脚本"
-    Write-Host "============================================="
-    Write-Host ""
-    Write-Host "用法: .\install-agent.ps1 [选项]"
-    Write-Host ""
-    Write-Host "选项:"
-    Write-Host "  -Uninstall         卸载 Simple Server Status Agent"
-    Write-Host "  -Help              显示此帮助信息"
-    Write-Host "  -Version <版本>    指定要安装的版本 (默认: 最新版本)"
-    Write-Host "  -InstallDir <路径> 指定安装目录 (默认: C:\Program Files\SSSA)"
-    Write-Host ""
-    Write-Host "示例:"
-    Write-Host "  .\install-agent.ps1                           # 安装最新版本"
-    Write-Host "  .\install-agent.ps1 -Version v1.0.0          # 安装指定版本"
-    Write-Host "  .\install-agent.ps1 -InstallDir C:\SSSA      # 安装到指定目录"
-    Write-Host "  .\install-agent.ps1 -Uninstall               # 卸载"
-    Write-Host ""
-}
-
-# 主函数
-function Main {
-    Write-Host "Simple Server Status Agent Windows 安装脚本" -ForegroundColor Cyan
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host ""
-
-    # 处理参数
-    if ($Help) {
-        Show-Help
-        return
-    }
-
-    if ($Uninstall) {
-        Assert-Administrator
-        Uninstall-Agent
-        return
-    }
-
-    # 默认安装
-    Assert-Administrator
-    Install-Agent
-    Show-Usage
-}
-
-# 执行主函数
-Main

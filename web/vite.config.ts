@@ -1,55 +1,40 @@
-import {defineConfig} from 'vite'
-import vue from '@vitejs/plugin-vue'
-import {fileURLToPath, URL} from 'node:url'
-import Components from 'unplugin-vue-components/vite';
-import {AntDesignVueResolver} from 'unplugin-vue-components/resolvers';
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+import type { Plugin } from 'vite'
+import { defineConfig } from 'vitest/config'
+
+const root = path.dirname(fileURLToPath(import.meta.url))
+const outDir = path.resolve(root, '../internal/dashboard/web/dist')
+const dashboardTarget = process.env.SSS_DASHBOARD_TARGET ?? 'http://127.0.0.1:8900'
+
+// keepGitkeep 构建会清空输出目录，结束后重新写入 .gitkeep，保证 Go embed 目录在仓库中始终存在
+function keepGitkeep(): Plugin {
+  return {
+    name: 'keep-gitkeep',
+    apply: 'build',
+    closeBundle() {
+      fs.writeFileSync(path.join(outDir, '.gitkeep'), '')
+    },
+  }
+}
 
 export default defineConfig({
-    build: {
-        //分隔多个，防止单文件过大
-        rollupOptions: {
-            output:{
-                manualChunks(id) {
-                    if (id.includes('node_modules')) {
-                        return id.toString().split('node_modules/')[1].split('/')[0].toString();
-                    }
-                }
-            }
-        }
-    },
-    plugins: [
-        vue(),
-        Components({
-            resolvers: [
-                AntDesignVueResolver({
-                    importStyle: false, // css in js
-                }),
-            ],
-        }),
-    ],
-    resolve: {
-        // alias: {
-        //   '@': path.resolve(__dirname, 'src'),
-        // }
-        alias: {
-            '@': fileURLToPath(new URL('./src', import.meta.url))
-        }
-    },
-    server: {
-        proxy: {
-            "/api": {
-                target: "http://127.0.0.1:8900",
-                changeOrigin: true,  //允许跨域
-                ws: true,  // 开启 websockets 代理
-                secure: false, // 验证 SSL 证书
-                rewrite: (path) => path,
-            },
-            "/ws-frontend": {
-                target: "http://127.0.0.1:8900",
-                changeOrigin: true,  //允许跨域
-                ws: true,  // 开启 websockets 代理
-                secure: false, // 验证 SSL 证书
-            },
-        }
-    },
+  plugins: [react(), tailwindcss(), keepGitkeep()],
+  resolve: { alias: { '@': path.resolve(root, 'src') } },
+  // 国旗 SVG 始终作为独立文件输出，避免被内联进 JS/CSS
+  build: { outDir, emptyOutDir: true, chunkSizeWarningLimit: 700, assetsInlineLimit: (file) => (file.endsWith('.svg') ? false : undefined) },
+  server: {
+    proxy: { '/api': { target: dashboardTarget, changeOrigin: true, ws: true } },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
+    css: false,
+    clearMocks: true,
+  },
 })

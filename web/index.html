@@ -1,13 +1,23 @@
 <!doctype html>
-<html lang="zh">
-<head>
-    <meta charset="UTF-8"/>
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>SimpleServerStatus</title>
-</head>
-<body>
-<div id="app" style="height: 100%"></div>
-<script type="module" src="/src/main.ts"></script>
-</body>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Server Status</title>
+    <script>
+      // 在首帧渲染前应用主题，避免暗色模式闪白
+      ;(function () {
+        try {
+          var t = localStorage.getItem('sss.theme') || 'system'
+          var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

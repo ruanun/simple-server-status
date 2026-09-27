@@ -2,17 +2,32 @@
 .vscode
 node_modules
 dist
-!dashboard/public/dist/README.md
+!internal/dashboard/web/dist
+internal/dashboard/web/dist/*
+!internal/dashboard/web/dist/.gitkeep
 *.log
 *.iml
 sss-agent.yaml
-sss-dashboard.yaml
 logs
 *.exe
 
 # 构建产物
 bin/
 *.test
+
+# Dashboard 运行数据
+data/
+*.db-wal
+*.db-shm
+
+# 本地包管理器缓存
+.pnpm-store/
+.cache/
+.superpowers/
+
+# 前端端到端测试临时产物
+web/test-results/
+web/playwright-report/
 
 # 测试覆盖率
 coverage.out

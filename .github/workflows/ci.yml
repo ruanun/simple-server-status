@@ -1,139 +1,134 @@
 name: CI
 
-permissions:
-  contents: read
-  security-events: write
-
 on:
   push:
-    branches: [ master, main, develop ]
+    branches: [master, develop]
   pull_request:
-    branches: [ master, main, develop ]
+    branches: [master, develop]
+
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    name: 代码检查
+  go:
+    name: Go 检查与测试
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          version: 10
-
-      - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: 构建前端
-        run: bash scripts/build-web.sh
-
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.2'
-          cache: true
-
+          go-version: '1.24.x'
       - name: 安装 golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.6.2
-
-      - name: 运行 golangci-lint
+        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+      - name: golangci-lint
         run: golangci-lint run --timeout=5m ./...
-
-      - name: 运行 go vet
+      - name: go vet
         run: go vet ./...
+      - name: go test
+        run: go test ./...
+      - name: 交叉编译 Agent
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/sss-agent
+          GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/sss-agent
+          GOOS=freebsd GOARCH=amd64 go build -o /dev/null ./cmd/sss-agent
+          GOOS=linux GOARCH=arm GOARM=7 go build -o /dev/null ./cmd/sss-agent
 
-  build:
-    name: 构建测试
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        go-version: ['1.23.2']
+  web:
+    name: 前端检查、构建与端到端测试
+    runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
-          cache: true
-
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v2
+          go-version: '1.24.x'
+      - uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '22'
+          cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: 类型检查、Lint、单元测试
+        working-directory: web
+        run: pnpm typecheck && pnpm lint && pnpm test && pnpm test:scripts
+      - name: 全新构建（make build）
+        run: make build
+      - name: 入口包体预算
+        working-directory: web
+        run: pnpm check:bundle
+      - name: 安装 Playwright Chromium
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: 端到端测试
+        working-directory: web
+        run: pnpm test:e2e
+      - name: 上传 Playwright 报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: web/test-results
+          retention-days: 7
 
-      - name: 构建前端（Unix 系统）
-        if: matrix.os != 'windows-latest'
-        run: bash scripts/build-web.sh
+  scripts:
+    name: 安装脚本（Linux）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -x scripts/install-agent.sh scripts/install-agent.test.sh
+      - name: 函数级测试
+        run: bash scripts/install-agent.test.sh
 
-      - name: 构建前端（Windows 系统）
-        if: matrix.os == 'windows-latest'
+  windows:
+    name: Windows（Agent 服务与安装脚本）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Agent 测试
+        run: go test ./cmd/sss-agent/...
+      - name: 安装脚本测试（PowerShell 7）
         shell: pwsh
-        run: |
-          $PSDefaultParameterValues['*:Encoding'] = 'utf8'
-          & "scripts/build-web.ps1"
+        run: ./scripts/install-agent.test.ps1
+      - name: 安装脚本测试（Windows PowerShell 5.1）
+        shell: powershell
+        run: ./scripts/install-agent.test.ps1
 
-      - name: 构建 Agent（Windows）
-        if: matrix.os == 'windows-latest'
-        run: go build -v -o bin/sss-agent.exe ./cmd/agent
-
-      - name: 构建 Agent（非 Windows）
-        if: matrix.os != 'windows-latest'
-        run: go build -v -o bin/sss-agent ./cmd/agent
-
-      - name: 构建 Dashboard（Windows）
-        if: matrix.os == 'windows-latest'
-        run: go build -v -o bin/sss-dashboard.exe ./cmd/dashboard
-
-      - name: 构建 Dashboard（非 Windows）
-        if: matrix.os != 'windows-latest'
-        run: go build -v -o bin/sss-dashboard ./cmd/dashboard
-
-      - name: 验证二进制文件
-        if: matrix.os != 'windows-latest'
-        run: |
-          chmod +x bin/sss-agent
-          chmod +x bin/sss-dashboard
-          file bin/sss-agent
-          file bin/sss-dashboard
+  release-config:
+    name: 检查 GoReleaser 配置
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check
 
   security:
-    name: 安全检查
+    name: 安全扫描
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.23.2'
-          cache: true
-
-      - name: 运行 Gosec 安全扫描
-        uses: securego/gosec@master
+          go-version: '1.24.x'
+      - name: gosec
+        uses: securego/gosec@v2.29.0
         with:
           args: '-fmt sarif -out results.sarif ./...'
         continue-on-error: true
-
-      - name: 上传 SARIF 文件
+      - name: 上传 SARIF
+        if: always() && hashFiles('results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
-        if: always()

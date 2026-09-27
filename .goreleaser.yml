@@ -1,135 +1,73 @@
-# GoReleaser 配置文件
-# 文档: https://goreleaser.com
-# 作者: ruanun
-# 版本: 2.0.0
-
+# GoReleaser 配置：https://goreleaser.com
+# 作者: ruan
+# 发布前必须先构建前端（make build-web），前端产物会嵌入 Dashboard
 version: 2
 
 before:
   hooks:
-    # 在构建前确保依赖是最新的
-    - go mod tidy
-    # 注意：前端构建已在 GitHub Actions 工作流中通过 scripts/build-web.sh 完成
-    # 本地使用时，请先运行: make build-web 或 bash scripts/build-web.sh
+    # 防止前端未构建就发布出没有界面的 Dashboard
+    - sh -c 'test -f internal/dashboard/web/dist/index.html || { echo "缺少前端产物，请先运行 make build-web" >&2; exit 1; }'
 
 builds:
-  # Agent 构建配置
   - id: agent
-    main: ./cmd/agent
+    main: ./cmd/sss-agent
     binary: sss-agent
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-      - freebsd
-    goarch:
-      - amd64
-      - arm64
-      - arm
-    goarm:
-      - "7"
+    env: [CGO_ENABLED=0]
+    goos: [linux, windows, darwin, freebsd]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
     ignore:
-      - goos: windows
-        goarch: arm
-      - goos: windows
-        goarch: arm64
-      - goos: darwin
-        goarch: arm
-      - goos: freebsd
-        goarch: arm
+      - { goos: windows, goarch: arm }
+      - { goos: windows, goarch: arm64 }
+      - { goos: darwin, goarch: arm }
+      - { goos: freebsd, goarch: arm }
+    flags: [-trimpath]
     ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
-      - -X main.builtBy=goreleaser
-    flags:
-      - -trimpath
+      - -s -w -X main.version={{ .Version }}
 
-  # Dashboard 构建配置
   - id: dashboard
-    main: ./cmd/dashboard
+    main: ./cmd/sss-dashboard
     binary: sss-dashboard
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-      - freebsd
-    goarch:
-      - amd64
-      - arm64
-      - arm
-    goarm:
-      - "7"
+    env: [CGO_ENABLED=0]
+    goos: [linux, windows, darwin, freebsd]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
     ignore:
-      - goos: windows
-        goarch: arm
-      - goos: windows
-        goarch: arm64
-      - goos: darwin
-        goarch: arm
-      - goos: freebsd
-        goarch: arm
+      - { goos: windows, goarch: arm }
+      - { goos: windows, goarch: arm64 }
+      - { goos: darwin, goarch: arm }
+      - { goos: freebsd, goarch: arm }
+    flags: [-trimpath]
     ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
-      - -X main.builtBy=goreleaser
-    flags:
-      - -trimpath
+      - -s -w -X main.version={{ .Version }}
 
+# 归档名不含版本号且不包目录，安装脚本可直接使用 releases/latest/download/<文件名>
 archives:
-  # Agent 独立包
   - id: agent
     ids: [agent]
-    formats:
-      - tar.gz
-    wrap_in_directory: true
-    name_template: >-
-      sss-agent_
-      {{- .Version }}_
-      {{- .Os }}_
-      {{- .Arch }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats: [tar.gz]
     format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    files:
-      - README.md
-      - LICENSE
-      - configs/sss-agent.yaml.example
-      - deployments/systemd/sssa.service
+      - { goos: windows, formats: [zip] }
+    name_template: "sss-agent_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    wrap_in_directory: false
+    files: [LICENSE, configs/sss-agent.yaml.example]
 
-  # Dashboard 独立包
   - id: dashboard
     ids: [dashboard]
-    formats:
-      - tar.gz
-    wrap_in_directory: true
-    name_template: >-
-      sss-dashboard_
-      {{- .Version }}_
-      {{- .Os }}_
-      {{- .Arch }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats: [tar.gz]
     format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    files:
-      - README.md
-      - LICENSE
-      - configs/sss-dashboard.yaml.example
+      - { goos: windows, formats: [zip] }
+    name_template: "sss-dashboard_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    wrap_in_directory: false
+    files: [LICENSE]
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: checksums.txt
   algorithm: sha256
+  # 安装脚本同样写入 checksums.txt，便于校验
+  extra_files:
+    - glob: scripts/install-agent.sh
+    - glob: scripts/install-agent.ps1
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
@@ -138,88 +76,32 @@ changelog:
   sort: asc
   use: github
   filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
-      - 'merge conflict'
-      - Merge pull request
-      - Merge remote-tracking branch
-      - Merge branch
+    exclude: ['^docs:', '^test:', '^chore:', '^ci:', 'Merge pull request', 'Merge branch']
   groups:
-    - title: '🎉 新功能'
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 0
-    - title: '🐛 Bug 修复'
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
-      order: 1
-    - title: '📝 文档更新'
-      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
-      order: 2
-    - title: '🚀 性能优化'
-      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
-      order: 3
-    - title: '♻️ 代码重构'
-      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
-      order: 4
-    - title: '其他更改'
-      order: 999
+    - { title: 新功能, regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$', order: 0 }
+    - { title: 问题修复, regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$', order: 1 }
+    - { title: 性能优化, regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$', order: 2 }
+    - { title: 其他, order: 999 }
 
 release:
   github:
     owner: ruanun
     name: simple-server-status
-  draft: false
   prerelease: auto
   mode: replace
-  name_template: "{{.ProjectName}} v{{.Version}}"
+  name_template: "v{{ .Version }}"
+  extra_files:
+    - glob: scripts/install-agent.sh
+    - glob: scripts/install-agent.ps1
   header: |
-    ## Simple Server Status v{{.Version}}
+    ## 安装
 
-    🎉 欢迎使用 Simple Server Status！
-
-    ### 快速安装
-
-    **Agent 一键安装：**
+    **Dashboard（Docker）**
     ```bash
-    # Linux/macOS/FreeBSD
-    curl -fsSL https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.sh | bash
-
-    # Windows (PowerShell)
-    iwr -useb https://raw.githubusercontent.com/ruanun/simple-server-status/main/scripts/install-agent.ps1 | iex
+    docker run -d --name sss-dashboard -p 8900:8900 -v sss-data:/app/data ruanun/sssd:{{ .Version }}
+    docker logs sss-dashboard   # 查看首次生成的 admin 密码
     ```
 
-    **Dashboard Docker 部署：**
-    ```bash
-    docker run --name sssd -d -p 8900:8900 -v ./sss-dashboard.yaml:/app/sss-dashboard.yaml ruanun/sssd:{{.Version}}
-    ```
+    **Agent**：登录后台 → 服务器 → 新建或点「安装命令」，复制 Linux / Windows 一键命令到目标机器执行。
 
-    ### 📦 下载说明
-
-    - `sss-agent`: 监控代理客户端
-    - `sss-dashboard`: 监控面板服务端
-
-    请根据你的操作系统和架构选择合适的版本下载。
-
-  footer: |
-    ---
-
-    **完整文档：** https://github.com/ruanun/simple-server-status/blob/master/README.md
-
-    **问题反馈：** https://github.com/ruanun/simple-server-status/issues
-
-    感谢使用 Simple Server Status！ ⭐
-
-# 注释掉 nfpms 部分，如果需要生成 Linux 包可以取消注释
-# nfpms:
-#   - id: default
-#     package_name: simple-server-status
-#     homepage: https://github.com/ruanun/simple-server-status
-#     maintainer: ruan <your-email@example.com>
-#     description: 极简服务器监控探针
-#     license: MIT
-#     formats:
-#       - deb
-#       - rpm
-#     bindir: /usr/local/bin
+    完整文档见 [README](https://github.com/ruanun/simple-server-status/blob/master/README.md)。

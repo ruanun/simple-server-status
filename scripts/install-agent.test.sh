@@ -2,6 +2,9 @@
 # install-agent.sh 的函数级测试
 # 作者: ruan
 # 用法: bash scripts/install-agent.test.sh
+# 用例中的单引号 '$x' 是有意保留的字面量，用于验证密钥不会被 shell 展开
+# shellcheck disable=SC2016
+# shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 cd "$(dirname "$0")"
 

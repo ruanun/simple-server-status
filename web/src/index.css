@@ -86,6 +86,10 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
   }
+  /* 页面内容较少时页脚仍贴底 */
+  #root {
+    @apply flex min-h-svh flex-col;
+  }
 }
 
 @utility tabular {

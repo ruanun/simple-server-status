@@ -37,6 +37,23 @@ describe('AdminLayout', () => {
     await waitFor(() => expect(localStorage.getItem('sss.token')).toBeNull())
   })
 
+  it('侧栏底部显示 Dashboard 版本，正式版本号前加 v', async () => {
+    tokenStore.set('tok')
+    mockFetch({ ...SITE_ROUTE, 'GET /api/auth/me': { username: 'admin', version: '2.0.0-beta.4' } })
+    renderWithProviders(<AdminLayout />, { route: '/admin/servers', path: '/admin/*' })
+
+    const version = await screen.findByText('v2.0.0-beta.4')
+    expect(version.parentElement).toHaveTextContent('Simple Server Status')
+  })
+
+  it('开发版本原样显示', async () => {
+    tokenStore.set('tok')
+    mockFetch({ ...SITE_ROUTE, 'GET /api/auth/me': { username: 'admin', version: 'dev' } })
+    renderWithProviders(<AdminLayout />, { route: '/admin/servers', path: '/admin/*' })
+
+    expect(await screen.findByText('dev')).toBeInTheDocument()
+  })
+
   it('退出登录后清除后台与登录态服务器列表缓存', async () => {
     tokenStore.set('tok')
     mockFetch({ ...SITE_ROUTE, 'GET /api/auth/me': { username: 'admin' } })

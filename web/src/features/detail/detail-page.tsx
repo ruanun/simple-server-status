@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
+import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { IpBadges, LastReport, StatusPill } from '@/components/status-bits'
 import { Button } from '@/components/ui/button'
@@ -139,6 +140,7 @@ export function DetailPage() {
         </Button>
         {body}
       </main>
+      <SiteFooter />
     </>
   )
 }

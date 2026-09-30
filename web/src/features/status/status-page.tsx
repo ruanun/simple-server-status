@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConnectionBanner } from '@/components/connection-banner'
+import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSite } from '@/features/site/use-site'
@@ -88,6 +89,7 @@ export function StatusPage() {
         />
         {content}
       </main>
+      <SiteFooter />
     </>
   )
 }

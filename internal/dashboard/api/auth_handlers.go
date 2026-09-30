@@ -38,7 +38,8 @@ func (a *API) login(c *gin.Context) {
 }
 
 func (a *API) me(c *gin.Context) {
-	respond(c, gin.H{"username": currentUser(c).Username})
+	// Dashboard 版本只对登录用户可见，公开接口不返回
+	respond(c, gin.H{"username": currentUser(c).Username, "version": a.Version})
 }
 
 type passwordReq struct {

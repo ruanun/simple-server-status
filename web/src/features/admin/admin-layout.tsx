@@ -59,6 +59,12 @@ export function AdminLayout() {
           {t('nav.logout')}
           {me.data && <span className="ml-auto truncate text-xs">{me.data.username}</span>}
         </button>
+        {me.data?.version && (
+          <p className="px-3 pt-1 text-xs text-muted-foreground/70">
+            Simple Server Status
+            <span className="block break-all">{/^\d/.test(me.data.version) ? `v${me.data.version}` : me.data.version}</span>
+          </p>
+        )}
       </div>
     </>
   )

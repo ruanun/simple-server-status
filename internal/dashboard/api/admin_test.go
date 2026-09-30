@@ -51,6 +51,22 @@ func TestLoginFlowAndRateLimit(t *testing.T) {
 	}
 }
 
+func TestMeIncludesVersion(t *testing.T) {
+	e := newTestEnv(t)
+	e.api.Version = "2.0.0-beta.9"
+	code, body := e.do("GET", "/api/auth/me", e.adminToken(), nil)
+	me := decodeData[struct {
+		Username string `json:"username"`
+		Version  string `json:"version"`
+	}](t, body)
+	if code != http.StatusOK || me.Username != "admin" || me.Version != "2.0.0-beta.9" {
+		t.Fatalf("me 应包含用户名与 Dashboard 版本：%d %s", code, body)
+	}
+	if _, body := e.do("GET", "/api/public/site", "", nil); strings.Contains(string(body), "2.0.0-beta.9") {
+		t.Fatalf("公开接口不应包含 Dashboard 版本：%s", body)
+	}
+}
+
 func TestLoginRateLimitConcurrent(t *testing.T) {
 	e := newTestEnv(t)
 	e.adminToken()

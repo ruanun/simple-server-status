@@ -114,7 +114,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | 方法 | 路径 | 请求 | 响应 `data` |
 |---|---|---|---|
 | POST | `/api/auth/login` | `{"username", "password"}` | `{"token", "username"}` |
-| GET | `/api/auth/me` | — | `{"username"}` |
+| GET | `/api/auth/me` | — | `{"username", "version"}`（`version` 为 Dashboard 版本，仅登录后可见） |
 | PUT | `/api/auth/password` | `{"old_password", "new_password"}` | `{"token"}`（新 token，旧 token 失效） |
 | GET | `/api/admin/servers` | — | `Server` 数组，每项额外带 `online`、`agent_version`（当前连接或最近一次连接的 Agent 版本，未连接过为空）、`outdated`（Agent 版本低于 Dashboard 版本；任一方不是正式发布版本号时为 `false`）、`uptime_24h`（同 `ServerView`） |
 | POST | `/api/admin/servers` | `ServerInput` | 新建的 `Server`（含自动生成的 `id` 与 `secret`） |

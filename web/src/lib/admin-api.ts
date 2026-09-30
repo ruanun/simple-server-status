@@ -23,7 +23,7 @@ const qs = (o: Record<string, string | number | undefined>) =>
 
 /** adminApi 管理接口（均需登录） */
 export const adminApi = {
-  me: () => api.get<{ username: string }>('/api/auth/me'),
+  me: () => api.get<{ username: string; version: string }>('/api/auth/me'),
   login: (username: string, password: string) => api.post<{ token: string; username: string }>('/api/auth/login', { username, password }),
   changePassword: (oldPassword: string, newPassword: string) =>
     api.put<{ token: string }>('/api/auth/password', { old_password: oldPassword, new_password: newPassword }),

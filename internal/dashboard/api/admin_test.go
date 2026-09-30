@@ -286,7 +286,7 @@ func TestAdminSettings(t *testing.T) {
 	if code, _ := e.do("PUT", "/api/admin/settings", tok, bad); code != http.StatusBadRequest {
 		t.Fatalf("非法间隔应返回 400，实际 %d", code)
 	}
-	good := store.Settings{SiteTitle: "我的探针", ShowPrice: true, DefaultReportInterval: 5, InstallScriptBase: "https://x/"}
+	good := store.Settings{SiteTitle: "我的探针", ShowPrice: true, DefaultReportInterval: 5, InstallScriptBase: "https://x/", Notify: store.DefaultNotifySettings()}
 	code, body := e.do("PUT", "/api/admin/settings", tok, good)
 	saved := decodeData[store.Settings](t, body)
 	if code != http.StatusOK || saved.InstallScriptBase != "https://x" {
@@ -298,6 +298,62 @@ func TestAdminSettings(t *testing.T) {
 	}
 	if s := createServer(t, e, tok, gin.H{"name": "a"}); s.ReportInterval != 5 {
 		t.Fatalf("新服务器应使用默认上报间隔 5，实际 %d", s.ReportInterval)
+	}
+}
+
+func TestSettingsNotifyValidation(t *testing.T) {
+	e := newTestEnv(t)
+	tok := e.adminToken()
+	base := func(mod func(n gin.H)) gin.H {
+		n := gin.H{"webhook_url": "", "telegram_token": "", "telegram_chat_id": "", "lang": "zh-CN",
+			"offline_enabled": true, "offline_minutes": 3, "load_enabled": true, "load_cpu": 90, "load_mem": 90, "load_disk": 90,
+			"load_minutes": 5, "expire_enabled": true, "expire_days": 7, "traffic_enabled": true, "traffic_percent": 90}
+		mod(n)
+		return gin.H{"site_title": "t", "default_report_interval": 2, "install_script_base": "https://x.example.com", "notify": n}
+	}
+	bad := []func(n gin.H){
+		func(n gin.H) { n["webhook_url"] = "ftp://x" },
+		func(n gin.H) { n["telegram_token"] = "123:abc" },
+		func(n gin.H) { n["lang"] = "fr" },
+		func(n gin.H) { n["offline_minutes"] = 0 },
+		func(n gin.H) { n["load_minutes"] = 11 },
+		func(n gin.H) { n["expire_days"] = 91 },
+		func(n gin.H) { n["traffic_percent"] = 101 },
+	}
+	for i, mod := range bad {
+		if code, body := e.do("PUT", "/api/admin/settings", tok, base(mod)); code != http.StatusBadRequest || errorCode(t, body) != "invalid_input" {
+			t.Errorf("第 %d 个非法设置应返回 invalid_input，实际 %d %s", i, code, body)
+		}
+	}
+	if code, body := e.do("PUT", "/api/admin/settings", tok, gin.H{"site_title": "t", "default_report_interval": 2, "announcement": strings.Repeat("字", 1001)}); code != http.StatusBadRequest {
+		t.Errorf("超长公告应返回 400，实际 %d %s", code, body)
+	}
+	ok := base(func(n gin.H) { n["telegram_token"], n["telegram_chat_id"] = "123:SECRET", "42" })
+	ok["announcement"] = "  维护通知  "
+	if code, body := e.do("PUT", "/api/admin/settings", tok, ok); code != http.StatusOK {
+		t.Fatalf("合法设置保存失败 %d %s", code, body)
+	}
+	code, body := e.do("GET", "/api/public/site", "", nil)
+	if code != http.StatusOK || !strings.Contains(string(body), `"announcement":"维护通知"`) || strings.Contains(string(body), "SECRET") || strings.Contains(string(body), "notify") {
+		t.Fatalf("公开站点信息错误或泄露通知设置: %s", body)
+	}
+}
+
+func TestSettingsMissingNotifyUsesDefaults(t *testing.T) {
+	e := newTestEnv(t)
+	tok := e.adminToken()
+	if code, body := e.do("PUT", "/api/admin/settings", tok, gin.H{"site_title": "t", "default_report_interval": 2}); code != http.StatusOK {
+		t.Fatalf("缺少 notify 时应使用默认值保存 %d %s", code, body)
+	}
+	if got := e.api.currentSettings().Notify; got != store.DefaultNotifySettings() {
+		t.Fatalf("通知设置应为默认值 %+v", got)
+	}
+	old := gin.H{"version": 1, "settings": gin.H{"site_title": "旧", "default_report_interval": 2}, "servers": []gin.H{}}
+	if code, body := e.do("POST", "/api/admin/import", tok, old); code != http.StatusOK {
+		t.Fatalf("旧导出文件应能导入 %d %s", code, body)
+	}
+	if got := e.api.currentSettings(); got.SiteTitle != "旧" || got.Notify != store.DefaultNotifySettings() {
+		t.Fatalf("导入旧文件后设置错误 %+v", got)
 	}
 }
 
@@ -440,5 +496,98 @@ func TestInstallCommandsPinVersion(t *testing.T) {
 				t.Errorf("windows 命令\n得到 %v\n期望 %s", got["windows"], wantWin)
 			}
 		})
+	}
+}
+
+func TestAdminListLastSeenUsesLiveReport(t *testing.T) {
+	e := newTestEnv(t)
+	on := e.addServer(store.Server{Name: "on"})
+	off := e.addServer(store.Server{Name: "off"})
+	if err := e.st.SetLastSeen(context.Background(), off.ID, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.api.reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e.api.Hub.Connect(on.ID, 2)
+	e.api.handleReport(context.Background(), on.ID, proto.Report{})
+
+	code, body := e.do("GET", "/api/admin/servers", e.adminToken(), nil)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 %d", code)
+	}
+	got := map[string]int64{}
+	for _, s := range decodeData[[]struct {
+		ID       string `json:"id"`
+		LastSeen int64  `json:"last_seen"`
+	}](t, body) {
+		got[s.ID] = s.LastSeen
+	}
+	if got[on.ID] != e.clock.Now().Unix() {
+		t.Fatalf("在线服务器应返回实时上报时间，得到 %d", got[on.ID])
+	}
+	if got[off.ID] != 1000 {
+		t.Fatalf("离线服务器应返回数据库中的最后在线时间，得到 %d", got[off.ID])
+	}
+}
+
+func TestAdminServerNoteAndMuted(t *testing.T) {
+	e := newTestEnv(t)
+	tok := e.adminToken()
+	s := createServer(t, e, tok, gin.H{"name": "n1", "note": "  购买于 A 商家  ", "notify_muted": true})
+	if s.Note != "购买于 A 商家" || !s.NotifyMuted {
+		t.Fatalf("新字段未保存或未去除首尾空白: %+v", s)
+	}
+	long := strings.Repeat("字", 2001)
+	if code, body := e.do("POST", "/api/admin/servers", tok, gin.H{"name": "n2", "note": long}); code != http.StatusBadRequest || errorCode(t, body) != "invalid_input" {
+		t.Fatalf("超长备注应返回 invalid_input，实际 %d %s", code, body)
+	}
+	code, body := e.do("GET", "/api/public/servers", "", nil)
+	if code != http.StatusOK || strings.Contains(string(body), "购买于") {
+		t.Fatalf("公开接口不应包含备注: %d %s", code, body)
+	}
+}
+
+func TestAdminNotifyTest(t *testing.T) {
+	e := newTestEnv(t)
+	tok := e.adminToken()
+	var hits atomic.Int32
+	hook := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	defer hook.Close()
+	body := gin.H{"webhook_url": hook.URL, "lang": "zh-CN", "offline_minutes": 3, "load_cpu": 90, "load_mem": 90, "load_disk": 90,
+		"load_minutes": 5, "expire_days": 7, "traffic_percent": 90}
+	code, b := e.do("POST", "/api/admin/notify/test", tok, body)
+	res := decodeData[map[string]*string](t, b)
+	if code != http.StatusOK || res["webhook"] == nil || *res["webhook"] != "ok" || res["telegram"] != nil || hits.Load() != 1 {
+		t.Fatalf("%d %s", code, b)
+	}
+	body["webhook_url"] = ""
+	if code, b := e.do("POST", "/api/admin/notify/test", tok, body); code != http.StatusBadRequest || errorCode(t, b) != "invalid_input" {
+		t.Fatalf("未配置渠道应返回 invalid_input，实际 %d %s", code, b)
+	}
+}
+
+func TestAdminListAgentVersion(t *testing.T) {
+	e := newTestEnv(t)
+	e.api.Version = "2.0.0-beta.2"
+	old := e.addServer(store.Server{Name: "old"})
+	cur := e.addServer(store.Server{Name: "cur"})
+	none := e.addServer(store.Server{Name: "none"})
+	e.api.Hub.SetStatic(old.ID, proto.Hello{AgentVersion: "2.0.0-beta.1"})
+	e.api.Hub.SetStatic(cur.ID, proto.Hello{AgentVersion: "2.0.0-beta.2"})
+	code, body := e.do("GET", "/api/admin/servers", e.adminToken(), nil)
+	if code != http.StatusOK {
+		t.Fatal(code)
+	}
+	got := map[string][2]any{}
+	for _, s := range decodeData[[]struct {
+		ID           string `json:"id"`
+		AgentVersion string `json:"agent_version"`
+		Outdated     bool   `json:"outdated"`
+	}](t, body) {
+		got[s.ID] = [2]any{s.AgentVersion, s.Outdated}
+	}
+	if got[old.ID] != [2]any{"2.0.0-beta.1", true} || got[cur.ID] != [2]any{"2.0.0-beta.2", false} || got[none.ID] != [2]any{"", false} {
+		t.Fatalf("版本信息错误 %+v", got)
 	}
 }

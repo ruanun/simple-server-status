@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
 import type { AdminServer } from '@/lib/types'
@@ -100,6 +101,11 @@ export function ServerFormDialog({ server, onClose, onSaved }: Props) {
               <Controller control={control} name="hidden" render={({ field }) => <Switch id="hidden" checked={field.value} onCheckedChange={field.onChange} />} />
               <Label htmlFor="hidden">{t('form.hidden')}</Label>
             </div>
+            <div className="sm:col-span-2">
+              <Field id="note" label={t('form.note')} error={errors.note?.message} hint={t('form.noteHint')}>
+                <Textarea id="note" rows={3} {...register('note')} />
+              </Field>
+            </div>
           </Section>
 
           <Section title={t('form.billing')}>
@@ -175,6 +181,10 @@ export function ServerFormDialog({ server, onClose, onSaved }: Props) {
             <Field id="mount_exclude" label={t('form.mountExclude')} hint={t('form.listHint')}>
               <Input id="mount_exclude" placeholder="/boot" {...register('mount_exclude')} />
             </Field>
+            <div className="flex items-center gap-2 sm:self-center">
+              <Controller control={control} name="notify_muted" render={({ field }) => <Switch id="notify_muted" checked={field.value} onCheckedChange={field.onChange} />} />
+              <Label htmlFor="notify_muted">{t('form.notifyMuted')}</Label>
+            </div>
           </Section>
 
           <DialogFooter>

@@ -45,3 +45,16 @@ describe('表单模型', () => {
     expect(messages).toEqual(expect.arrayContaining(['form.nameRequired', 'form.countryInvalid', 'form.numberInvalid', 'form.resetDayRange', 'form.intervalRange']))
   })
 })
+
+describe('备注与静音', () => {
+  it('来回转换并去除备注首尾空白', () => {
+    const v = fromServer(makeAdminServer({ note: '备注', notify_muted: true }))
+    expect(v.note).toBe('备注')
+    expect(v.notify_muted).toBe(true)
+    expect(toInput({ ...v, note: '  新备注  ' })).toMatchObject({ note: '新备注', notify_muted: true })
+  })
+  it('备注超过 2000 字符不通过校验', () => {
+    const v = fromServer(null)
+    expect(formSchema.safeParse({ ...v, name: 'a', note: 'x'.repeat(2001) }).success).toBe(false)
+  })
+})

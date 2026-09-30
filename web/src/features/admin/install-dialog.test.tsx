@@ -32,4 +32,11 @@ describe('InstallDialog', () => {
     expect(await within(dialog).findByText('install --dashboard https://probe.example.com')).toBeInTheDocument()
     await waitFor(() => expect(dashboards).toEqual([window.location.origin, 'https://probe.example.com']))
   })
+
+  it('升级模式显示升级标题与说明', async () => {
+    mockFetch({ 'GET /api/admin/servers/srv1/install': { linux: 'curl x', windows: 'iwr x' } })
+    renderWithProviders(<InstallDialog server={makeAdminServer({ id: 'srv1' })} mode="upgrade" onClose={() => {}} />)
+    expect(await screen.findByRole('dialog', { name: '升级 Agent' })).toBeInTheDocument()
+    expect(screen.getByText('在目标机器重新执行即可覆盖升级')).toBeInTheDocument()
+  })
 })

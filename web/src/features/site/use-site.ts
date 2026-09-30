@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { api } from '@/lib/api'
 import type { Site } from '@/lib/types'
 
-const FALLBACK: Site = { site_title: 'Simple Server Status', show_price: false }
+const FALLBACK: Site = { site_title: 'Simple Server Status', show_price: false, announcement: '' }
 
 /** useSite 站点标题与价格可见性，并同步浏览器标题 */
 export function useSite(): Site {

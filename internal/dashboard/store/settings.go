@@ -15,12 +15,44 @@ const DefaultInstallScriptBase = "https://github.com/ruanun/simple-server-status
 // ReleaseDownloadBase 指定版本 Release 资产的下载地址前缀，后接版本标签（如 v2.0.0）
 const ReleaseDownloadBase = "https://github.com/ruanun/simple-server-status/releases/download/"
 
+// NotifySettings 通知设置：渠道（为空表示不启用）与四条规则的开关、阈值
+type NotifySettings struct {
+	WebhookURL     string `json:"webhook_url"`
+	TelegramToken  string `json:"telegram_token"`
+	TelegramChatID string `json:"telegram_chat_id"`
+	Lang           string `json:"lang"`
+	OfflineEnabled bool   `json:"offline_enabled"`
+	OfflineMinutes int    `json:"offline_minutes"`
+	LoadEnabled    bool   `json:"load_enabled"`
+	LoadCPU        int    `json:"load_cpu"`
+	LoadMem        int    `json:"load_mem"`
+	LoadDisk       int    `json:"load_disk"`
+	LoadMinutes    int    `json:"load_minutes"`
+	ExpireEnabled  bool   `json:"expire_enabled"`
+	ExpireDays     int    `json:"expire_days"`
+	TrafficEnabled bool   `json:"traffic_enabled"`
+	TrafficPercent int    `json:"traffic_percent"`
+}
+
+// DefaultNotifySettings 默认通知设置：规则全部开启，渠道未配置
+func DefaultNotifySettings() NotifySettings {
+	return NotifySettings{
+		Lang:           "zh-CN",
+		OfflineEnabled: true, OfflineMinutes: 3,
+		LoadEnabled: true, LoadCPU: 90, LoadMem: 90, LoadDisk: 90, LoadMinutes: 5,
+		ExpireEnabled: true, ExpireDays: 7,
+		TrafficEnabled: true, TrafficPercent: 90,
+	}
+}
+
 // Settings 运行期设置（后台修改后即时生效）
 type Settings struct {
-	SiteTitle             string `json:"site_title"`
-	ShowPrice             bool   `json:"show_price"`
-	DefaultReportInterval int    `json:"default_report_interval"`
-	InstallScriptBase     string `json:"install_script_base"`
+	SiteTitle             string         `json:"site_title"`
+	ShowPrice             bool           `json:"show_price"`
+	DefaultReportInterval int            `json:"default_report_interval"`
+	InstallScriptBase     string         `json:"install_script_base"`
+	Announcement          string         `json:"announcement"`
+	Notify                NotifySettings `json:"notify"`
 }
 
 // DefaultSettings 默认设置
@@ -29,7 +61,65 @@ func DefaultSettings() Settings {
 		SiteTitle:             "Simple Server Status",
 		DefaultReportInterval: 2,
 		InstallScriptBase:     DefaultInstallScriptBase,
+		Notify:                DefaultNotifySettings(),
 	}
+}
+
+// settingField settings 表中的一个键与 Settings 字段的对应关系；ptr 为 *string、*bool 或 *int
+type settingField struct {
+	key string
+	ptr any
+}
+
+func settingFields(st *Settings) []settingField {
+	n := &st.Notify
+	return []settingField{
+		{"site_title", &st.SiteTitle},
+		{"show_price", &st.ShowPrice},
+		{"default_report_interval", &st.DefaultReportInterval},
+		{"install_script_base", &st.InstallScriptBase},
+		{"announcement", &st.Announcement},
+		{"notify_webhook_url", &n.WebhookURL},
+		{"notify_telegram_token", &n.TelegramToken},
+		{"notify_telegram_chat_id", &n.TelegramChatID},
+		{"notify_lang", &n.Lang},
+		{"notify_offline_enabled", &n.OfflineEnabled},
+		{"notify_offline_minutes", &n.OfflineMinutes},
+		{"notify_load_enabled", &n.LoadEnabled},
+		{"notify_load_cpu", &n.LoadCPU},
+		{"notify_load_mem", &n.LoadMem},
+		{"notify_load_disk", &n.LoadDisk},
+		{"notify_load_minutes", &n.LoadMinutes},
+		{"notify_expire_enabled", &n.ExpireEnabled},
+		{"notify_expire_days", &n.ExpireDays},
+		{"notify_traffic_enabled", &n.TrafficEnabled},
+		{"notify_traffic_percent", &n.TrafficPercent},
+	}
+}
+
+func (f settingField) set(v string) {
+	switch p := f.ptr.(type) {
+	case *string:
+		*p = v
+	case *bool:
+		*p = v == "true"
+	case *int:
+		if n, err := strconv.Atoi(v); err == nil {
+			*p = n
+		}
+	}
+}
+
+func (f settingField) get() string {
+	switch p := f.ptr.(type) {
+	case *string:
+		return *p
+	case *bool:
+		return strconv.FormatBool(*p)
+	case *int:
+		return strconv.Itoa(*p)
+	}
+	return ""
 }
 
 // GetSettings 读取设置，缺失项使用默认值
@@ -40,38 +130,30 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 		return st, err
 	}
 	defer rows.Close()
+	vals := map[string]string{}
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
 			return st, err
 		}
-		switch k {
-		case "site_title":
-			st.SiteTitle = v
-		case "show_price":
-			st.ShowPrice = v == "true"
-		case "default_report_interval":
-			if n, err := strconv.Atoi(v); err == nil {
-				st.DefaultReportInterval = n
-			}
-		case "install_script_base":
-			st.InstallScriptBase = v
+		vals[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return st, err
+	}
+	for _, f := range settingFields(&st) {
+		if v, ok := vals[f.key]; ok {
+			f.set(v)
 		}
 	}
-	return st, rows.Err()
+	return st, nil
 }
 
 // SaveSettings 保存设置
 func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
-	kv := map[string]string{
-		"site_title":              st.SiteTitle,
-		"show_price":              strconv.FormatBool(st.ShowPrice),
-		"default_report_interval": strconv.Itoa(st.DefaultReportInterval),
-		"install_script_base":     st.InstallScriptBase,
-	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		for k, v := range kv {
-			if err := upsertSetting(ctx, tx, k, v); err != nil {
+		for _, f := range settingFields(&st) {
+			if err := upsertSetting(ctx, tx, f.key, f.get()); err != nil {
 				return err
 			}
 		}

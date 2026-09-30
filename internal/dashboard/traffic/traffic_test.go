@@ -3,6 +3,7 @@ package traffic
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -178,5 +179,69 @@ func TestFilterIDSurvivesPeriodRollover(t *testing.T) {
 	mustAddF(t, a, "f2", 50, 50)
 	if in, out, _ := usage(t, a); in != 0 || out != 0 {
 		t.Fatalf("跨周期且过滤器变化时不应累加: %d %d", in, out)
+	}
+}
+
+func TestDailyTraffic(t *testing.T) {
+	ctx := context.Background()
+	a, _, c := newAcc(t, time.Date(2026, 9, 1, 23, 59, 0, 0, cst))
+	mustAdd(t, a, 100, 100) // 建立基线
+	mustAdd(t, a, 300, 150) // 9/1：+200 / +50
+	c.t = time.Date(2026, 9, 2, 0, 1, 0, 0, cst)
+	mustAdd(t, a, 50, 160) // 9/2：入站计数器归零，+50 / +10
+	want := []store.DailyTraffic{{Day: "2026-09-01", In: 200, Out: 50}, {Day: "2026-09-02", In: 50, Out: 10}, {Day: "2026-09-03", In: 0, Out: 0}}
+	got, err := a.Daily(ctx, "s", "2026-09-01", "2026-09-03")
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("未落库时 %+v %v", got, err)
+	}
+	if err := a.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = a.Daily(ctx, "s", "2026-09-01", "2026-09-03"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("落库后 %+v", got)
+	}
+	mustAdd(t, a, 60, 170) // 9/2 再 +10 / +10，尚未落库
+	got, _ = a.Daily(ctx, "s", "2026-09-02", "2026-09-02")
+	if !reflect.DeepEqual(got, []store.DailyTraffic{{Day: "2026-09-02", In: 60, Out: 20}}) {
+		t.Fatalf("合并未落库增量错误 %+v", got)
+	}
+}
+
+func TestDailyIgnoresFilterChange(t *testing.T) {
+	ctx := context.Background()
+	a, _, _ := newAcc(t, time.Date(2026, 9, 1, 12, 0, 0, 0, cst))
+	mustAddF(t, a, "f1", 100, 100)
+	mustAddF(t, a, "f1", 200, 200)
+	mustAddF(t, a, "f2", 5000, 5000) // 口径变化只重建基线
+	got, _ := a.Daily(ctx, "s", "2026-09-01", "2026-09-01")
+	if got[0].In != 100 || got[0].Out != 100 {
+		t.Fatalf("口径变化不应计入每日流量 %+v", got)
+	}
+}
+
+func TestDailyForgetAndCleanup(t *testing.T) {
+	ctx := context.Background()
+	a, st, _ := newAcc(t, time.Date(2026, 9, 1, 12, 0, 0, 0, cst))
+	mustAdd(t, a, 100, 100)
+	mustAdd(t, a, 200, 200)
+	a.Forget("s")
+	if got, _ := a.Daily(ctx, "s", "2026-09-01", "2026-09-01"); got[0].In != 0 {
+		t.Fatalf("Forget 后不应保留未落库增量 %+v", got)
+	}
+	if err := st.AddTrafficDaily(ctx, []store.DailyDelta{{ServerID: "s", Day: "2025-01-01", In: 1}, {ServerID: "s", Day: "2026-08-31", In: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CleanupDaily(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := st.QueryTrafficDaily(ctx, "s", "2000-01-01", "2099-12-31")
+	if len(rows) != 1 || rows[0].Day != "2026-08-31" {
+		t.Fatalf("应只清理 400 天前的数据 %+v", rows)
+	}
+}
+
+func TestUsed(t *testing.T) {
+	if Used("in", 3, 5) != 3 || Used("out", 3, 5) != 5 || Used("sum", 3, 5) != 8 || Used("", 3, 5) != 8 {
+		t.Fatal("Used 计算错误")
 	}
 }

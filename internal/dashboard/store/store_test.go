@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -33,8 +34,61 @@ func TestOpenMigratesIdempotently(t *testing.T) {
 	}
 	defer s.Close()
 	var v int
-	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 1 {
+	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 2 {
 		t.Fatalf("schema_version = %d, %v", v, err)
+	}
+}
+
+func TestServerNoteAndMuted(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	sv := Server{Name: "a", Note: "备注", NotifyMuted: true}
+	if err := s.CreateServer(ctx, &sv); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetServer(ctx, sv.ID)
+	if err != nil || got.Note != "备注" || !got.NotifyMuted {
+		t.Fatalf("新建后读取错误: %+v %v", got, err)
+	}
+	got.Note, got.NotifyMuted = "新备注", false
+	if err := s.UpdateServer(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.GetServer(ctx, sv.ID); got.Note != "新备注" || got.NotifyMuted {
+		t.Fatalf("更新后读取错误: %+v", got)
+	}
+	got.Note, got.NotifyMuted = "导入", true
+	if err := s.UpsertServers(ctx, []Server{got}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.GetServer(ctx, sv.ID); got.Note != "导入" || !got.NotifyMuted {
+		t.Fatalf("导入后读取错误: %+v", got)
+	}
+}
+
+func TestDeleteServerCleansNewTables(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	sv := Server{Name: "a"}
+	if err := s.CreateServer(ctx, &sv); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO traffic_daily (server_id, day, in_bytes, out_bytes) VALUES (?, '2026-09-01', 1, 1)`,
+		`INSERT INTO notify_state (server_id, rule, key, sent_at) VALUES (?, 'expire', '1', 1)`,
+	} {
+		if _, err := s.db.Exec(q, sv.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteServer(ctx, sv.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"traffic_daily", "notify_state"} {
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE server_id = ?`, sv.ID).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s 未清理: %d %v", table, n, err)
+		}
 	}
 }
 
@@ -225,5 +279,49 @@ func TestJWTSecretConcurrent(t *testing.T) {
 		if len(keys[i]) != 32 || string(keys[i]) != string(keys[0]) {
 			t.Fatalf("并发 JWTSecret 返回不一致的密钥: %x vs %x", keys[0], keys[i])
 		}
+	}
+}
+
+func TestSettingsNotifyRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	st, err := s.GetSettings(ctx)
+	if err != nil || st.Notify != DefaultNotifySettings() || st.Announcement != "" {
+		t.Fatalf("默认值错误 %+v %v", st, err)
+	}
+	st.Announcement = "维护通知"
+	st.Notify.WebhookURL = "https://hook.example.com/x"
+	st.Notify.TelegramToken, st.Notify.TelegramChatID = "123:abc", "42"
+	st.Notify.OfflineEnabled, st.Notify.OfflineMinutes = false, 10
+	st.Notify.Lang = "en-US"
+	if err := s.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSettings(ctx)
+	if err != nil || got != st {
+		t.Fatalf("读回不一致\n得到 %+v\n期望 %+v", got, st)
+	}
+}
+
+func TestTrafficDaily(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	rows := []DailyDelta{{ServerID: "a", Day: "2026-09-01", In: 10, Out: 1}, {ServerID: "a", Day: "2026-09-02", In: 5, Out: 5}, {ServerID: "b", Day: "2026-09-01", In: 7, Out: 7}}
+	if err := s.AddTrafficDaily(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddTrafficDaily(ctx, []DailyDelta{{ServerID: "a", Day: "2026-09-01", In: 1, Out: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryTrafficDaily(ctx, "a", "2026-09-01", "2026-09-30")
+	want := []DailyTraffic{{Day: "2026-09-01", In: 11, Out: 3}, {Day: "2026-09-02", In: 5, Out: 5}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v %v", got, err)
+	}
+	if n, err := s.DeleteTrafficDailyBefore(ctx, "2026-09-02"); err != nil || n != 2 {
+		t.Fatalf("删除行数 %d %v", n, err)
+	}
+	if got, _ = s.QueryTrafficDaily(ctx, "a", "2026-01-01", "2026-12-31"); len(got) != 1 || got[0].Day != "2026-09-02" {
+		t.Fatalf("清理后 %+v", got)
 	}
 }

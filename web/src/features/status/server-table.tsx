@@ -1,10 +1,10 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
-import { ExpiryText, OnlineDot } from '@/components/status-bits'
+import { AvailabilityText, ExpiryText, OnlineDot } from '@/components/status-bits'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { UsageBar } from '@/components/usage-bar'
 import { useLang } from '@/i18n/use-lang'
@@ -14,6 +14,7 @@ import type { ServerView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 import { sortBy, type SortKey } from './filters'
+import { defaultDesc, type SortState } from './sort-state'
 
 function BarCell({ value, text }: { value: number | null; text?: string }) {
   return (
@@ -24,12 +25,11 @@ function BarCell({ value, text }: { value: number | null; text?: string }) {
   )
 }
 
-/** ServerTable 首页列表视图：表头点击排序；名称为进入详情的链接（键盘可达），整行点击同样进入详情 */
-export function ServerTable({ servers, now }: { servers: ServerView[]; now: number }) {
+/** ServerTable 首页列表视图：表头点击排序（与外部排序状态共享）；名称为进入详情的链接（键盘可达），整行点击同样进入详情 */
+export function ServerTable({ servers, now, sort, onSort }: { servers: ServerView[]; now: number; sort: SortState; onSort: (s: SortState) => void }) {
   const { t } = useTranslation()
   const lang = useLang()
   const navigate = useNavigate()
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean } | null>(null)
   const rows = useMemo(() => (sort ? sortBy(servers, sort.key, sort.desc) : servers), [servers, sort])
 
   const head = (key: SortKey, label: string, className?: string) => (
@@ -37,7 +37,7 @@ export function ServerTable({ servers, now }: { servers: ServerView[]; now: numb
       <button
         type="button"
         className="inline-flex items-center gap-1"
-        onClick={() => setSort((p) => (p?.key === key ? { key, desc: !p.desc } : { key, desc: key !== 'name' }))}
+        onClick={() => onSort(sort?.key === key ? { key, desc: !sort.desc } : { key, desc: defaultDesc(key) })}
       >
         {label}
         {sort?.key === key && (sort.desc ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />)}
@@ -58,6 +58,7 @@ export function ServerTable({ servers, now }: { servers: ServerView[]; now: numb
             {head('traffic', t('table.traffic'), 'hidden sm:table-cell')}
             {head('speed', t('table.speed'), 'hidden md:table-cell')}
             {head('uptime', t('table.uptime'), 'hidden lg:table-cell')}
+            {head('availability', t('table.availability'), 'hidden lg:table-cell')}
             {head('expire', t('table.expire'), 'hidden lg:table-cell')}
           </TableRow>
         </TableHeader>
@@ -92,6 +93,7 @@ export function ServerTable({ servers, now }: { servers: ServerView[]; now: numb
                   {m && s.online ? `↓ ${formatSpeed(m.net_in_speed)} ↑ ${formatSpeed(m.net_out_speed)}` : '—'}
                 </TableCell>
                 <TableCell className="hidden text-xs tabular lg:table-cell">{m ? formatDuration(m.uptime, lang) : '—'}</TableCell>
+                <TableCell className="hidden text-xs lg:table-cell">{s.uptime_24h == null ? '—' : <AvailabilityText value={s.uptime_24h} />}</TableCell>
                 <TableCell className="hidden text-xs lg:table-cell">
                   <ExpiryText days={daysUntil(s.expire_at, now)} />
                 </TableCell>

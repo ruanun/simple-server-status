@@ -1,10 +1,11 @@
 import { api } from './api'
-import type { AdminServer, ServerInput, Settings } from './types'
+import type { AdminServer, NotifySettings, NotifyTestResult, Overview, ServerInput, Settings } from './types'
 
 export const adminKeys = {
   servers: ['admin', 'servers'] as const,
   settings: ['admin', 'settings'] as const,
   me: ['admin', 'me'] as const,
+  overview: ['admin', 'overview'] as const,
 }
 
 export interface InstallCommands {
@@ -29,6 +30,8 @@ export const adminApi = {
   order: (ids: string[]) => api.put<unknown>('/api/admin/server-order', { ids }),
   settings: () => api.get<Settings>('/api/admin/settings'),
   saveSettings: (s: Settings) => api.put<Settings>('/api/admin/settings', s),
+  testNotify: (cfg: NotifySettings) => api.post<NotifyTestResult>('/api/admin/notify/test', cfg),
   exportData: () => api.get<unknown>('/api/admin/export'),
   importData: (file: unknown) => api.post<{ servers: number }>('/api/admin/import', file),
+  overview: () => api.get<Overview>('/api/admin/overview'),
 }

@@ -49,3 +49,10 @@ describe('sortBy', () => {
     expect(sortBy(list, 'expire', false).map((s) => s.id)).toEqual(['x', 'y', 'z'])
   })
 })
+
+describe('按在线率排序', () => {
+  it('降序时无数据排在最后', () => {
+    const list = [makeServer({ id: 'a', uptime_24h: 90 }), makeServer({ id: 'b', uptime_24h: null }), makeServer({ id: 'c', uptime_24h: 99.5 })]
+    expect(sortBy(list, 'availability', true).map((s) => s.id)).toEqual(['c', 'a', 'b'])
+  })
+})

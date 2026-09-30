@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { daysUntil, formatAgo, formatBytes, formatChartLabel, formatChartTick, formatDuration, formatPercent, formatSpeed, percent } from './format'
+import {
+  daysUntil,
+  formatAgo,
+  formatAvailability,
+  formatBytes,
+  formatChartLabel,
+  formatChartTick,
+  formatDateTime,
+  formatDuration,
+  formatMonthDay,
+  formatPercent,
+  formatSpeed,
+  percent,
+} from './format'
 
 describe('formatBytes', () => {
   it.each([
@@ -59,6 +72,13 @@ describe('formatAgo', () => {
   })
 })
 
+describe('formatDateTime', () => {
+  it('输出本地日期与时间', () => {
+    const ts = new Date(2026, 8, 29, 17, 5, 9).getTime() / 1000
+    expect(formatDateTime(ts, 'zh-CN')).toBe('2026/9/29 17:05:09')
+  })
+})
+
 describe('图表时间格式', () => {
   // 用本地时间构造，结果与运行环境时区无关
   const ts = new Date(2026, 8, 25, 14, 5).getTime() / 1000
@@ -74,5 +94,20 @@ describe('图表时间格式', () => {
   it('提示框标签始终带日期与时间，并按语言本地化', () => {
     expect(formatChartLabel(ts, 'zh-CN')).toBe('9/25 14:05')
     expect(formatChartLabel(ts, 'en-US')).toMatch(/^9\/25, 02:05\sPM$/)
+  })
+})
+
+describe('formatAvailability', () => {
+  it('保留 1 位小数，100 不带小数', () => {
+    expect(formatAvailability(99.8)).toBe('99.8%')
+    expect(formatAvailability(100)).toBe('100%')
+    expect(formatAvailability(0)).toBe('0.0%')
+  })
+})
+
+describe('formatMonthDay', () => {
+  it('去掉年份与前导零', () => {
+    expect(formatMonthDay('2026-09-01')).toBe('9/1')
+    expect(formatMonthDay('2026-12-31')).toBe('12/31')
   })
 })

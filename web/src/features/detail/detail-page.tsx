@@ -6,7 +6,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
 import { SiteHeader } from '@/components/site-header'
-import { StatusPill } from '@/components/status-bits'
+import { LastReport, StatusPill } from '@/components/status-bits'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,13 +14,15 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useNow } from '@/hooks/use-now'
 import { useLang } from '@/i18n/use-lang'
 import { api, errorMessage } from '@/lib/api'
-import { RANGES, type Point, type Range } from '@/lib/types'
+import { formatAvailability, formatBytes, formatMonthDay } from '@/lib/format'
+import { RANGES, type Point, type Range, type ServerStats } from '@/lib/types'
 import { useLiveServers } from '@/realtime/use-live-servers'
 
 import { DiskList } from './disk-list'
 import { InfoGrid } from './info-grid'
 
 const MetricCharts = lazy(() => import('./metric-charts'))
+const DailyTrafficChart = lazy(() => import('./daily-traffic-chart'))
 
 export function DetailPage() {
   const { id = '' } = useParams()
@@ -36,6 +38,13 @@ export function DetailPage() {
     queryFn: () => api.get<Point[]>(`/api/public/servers/${encodeURIComponent(id)}/metrics?range=${range}`),
     enabled: server !== undefined,
     refetchInterval: range === 'realtime' ? 2000 : 60_000,
+  })
+
+  const stats = useQuery({
+    queryKey: ['stats', id],
+    queryFn: () => api.get<ServerStats>(`/api/public/servers/${encodeURIComponent(id)}/stats`),
+    enabled: server !== undefined,
+    refetchInterval: 300_000,
   })
 
   let body
@@ -58,9 +67,40 @@ export function DetailPage() {
               Agent {server.static.agent_version}
             </Badge>
           )}
+          <span className="text-xs text-muted-foreground tabular">
+            {t('detail.lastSeen')} <LastReport ts={server.last_seen} now={now} />
+          </span>
+          {stats.data && (stats.data.uptime_24h != null || stats.data.uptime_7d != null) && (
+            <span className="text-xs text-muted-foreground tabular">
+              {t('detail.availability')} 24h {stats.data.uptime_24h == null ? '—' : formatAvailability(stats.data.uptime_24h)} · 7d{' '}
+              {stats.data.uptime_7d == null ? '—' : formatAvailability(stats.data.uptime_7d)}
+            </span>
+          )}
         </div>
         <InfoGrid server={server} now={now} lang={lang} />
         {server.metrics && server.metrics.disks.length > 0 && <DiskList disks={server.metrics.disks} />}
+        <section className="space-y-3 rounded-lg border bg-card p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-medium">
+              {t('detail.dailyTraffic')}
+              {stats.data && ` ${formatMonthDay(stats.data.period_start)} – ${formatMonthDay(stats.data.period_end)}`}
+            </h2>
+            {server.traffic.limit != null && (
+              <span className="text-xs text-muted-foreground tabular">
+                {t('detail.trafficUsedOf', { used: formatBytes(server.traffic.used), limit: formatBytes(server.traffic.limit) })}
+              </span>
+            )}
+          </div>
+          {stats.data ? (
+            <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+              <DailyTrafficChart daily={stats.data.daily} />
+            </Suspense>
+          ) : stats.error ? (
+            <p className="py-12 text-center text-sm text-bad">{errorMessage(stats.error)}</p>
+          ) : (
+            <Skeleton className="h-40 w-full" />
+          )}
+        </section>
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium">{t('detail.history')}</h2>

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Settings } from '@/lib/types'
+import type { NotifySettings, Settings } from '@/lib/types'
 import { mockFetch } from '@/test/fetch'
 import { renderWithProviders } from '@/test/render'
 
@@ -13,7 +13,24 @@ import { SettingsPage } from './settings-page'
 // 避免在测试中额外渲染 <Toaster /> 引入动画与 Portal 带来的不确定性。
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const SETTINGS: Settings = { site_title: 'Simple Server Status', show_price: false, default_report_interval: 2, install_script_base: 'https://example.com/dl' }
+const NOTIFY: NotifySettings = {
+  webhook_url: '',
+  telegram_token: '',
+  telegram_chat_id: '',
+  lang: 'zh-CN',
+  offline_enabled: true,
+  offline_minutes: 3,
+  load_enabled: true,
+  load_cpu: 90,
+  load_mem: 90,
+  load_disk: 90,
+  load_minutes: 5,
+  expire_enabled: true,
+  expire_days: 7,
+  traffic_enabled: true,
+  traffic_percent: 90,
+}
+const SETTINGS: Settings = { site_title: 'Simple Server Status', show_price: false, default_report_interval: 2, install_script_base: 'https://example.com/dl', announcement: '', notify: NOTIFY }
 
 describe('SettingsPage', () => {
   it('修改站点标题并保存', async () => {
@@ -133,5 +150,115 @@ describe('SettingsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(fetchFn.mock.calls.some(([url]) => String(url) === '/api/admin/import')).toBe(false)
+  })
+
+  it('导入成功后两个表单显示导入后的最新设置', async () => {
+    let current: Settings = SETTINGS
+    const imported: Settings = {
+      ...SETTINGS,
+      site_title: '导入后的标题',
+      notify: { ...NOTIFY, webhook_url: 'https://imported.example.com/x' },
+    }
+    mockFetch({
+      'GET /api/admin/settings': () => ({ data: current }),
+      'POST /api/admin/import': () => {
+        current = imported
+        return { data: { servers: 1 } }
+      },
+    })
+    const user = userEvent.setup()
+    const { container } = renderWithProviders(<SettingsPage />, { route: '/admin/settings', path: '/admin/settings' })
+    await screen.findByLabelText('站点标题')
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    if (!input) throw new Error('未找到文件输入框')
+    await user.upload(input, new File([JSON.stringify({ servers: [{ name: 's1' }] })], 'import.json', { type: 'application/json' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: '导入' }))
+    await waitFor(() => expect(screen.getByLabelText('站点标题')).toHaveValue('导入后的标题'))
+    expect(screen.getByLabelText('Webhook 地址')).toHaveValue('https://imported.example.com/x')
+  })
+
+  it('保存公告', async () => {
+    let saved: unknown
+    mockFetch({ 'GET /api/admin/settings': SETTINGS, 'PUT /api/admin/settings': (body: unknown) => ((saved = body), { data: body }) })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />)
+    await user.type(await screen.findByLabelText('公告'), '周六维护')
+    await user.click(screen.getAllByRole('button', { name: '保存' })[0])
+    await waitFor(() => expect(saved).toMatchObject({ announcement: '周六维护', notify: NOTIFY }))
+  })
+
+  it('通知设置可保存并发送测试', async () => {
+    let saved: unknown
+    let tested: unknown
+    mockFetch({
+      'GET /api/admin/settings': SETTINGS,
+      'PUT /api/admin/settings': (body: unknown) => ((saved = body), { data: body }),
+      'POST /api/admin/notify/test': (body: unknown) => ((tested = body), { data: { webhook: 'ok', telegram: '对方返回 HTTP 401 Unauthorized' } }),
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />)
+    await user.type(await screen.findByLabelText('Webhook 地址'), 'https://hook.example.com/x')
+    await user.type(screen.getByLabelText('Bot Token'), '123:abc')
+    await user.type(screen.getByLabelText('Chat ID'), '42')
+    await user.clear(screen.getByLabelText('离线超过（分钟）'))
+    await user.type(screen.getByLabelText('离线超过（分钟）'), '10')
+    await user.click(screen.getByRole('button', { name: '发送测试' }))
+    await waitFor(() => expect(tested).toMatchObject({ webhook_url: 'https://hook.example.com/x', telegram_token: '123:abc', offline_minutes: 10 }))
+    expect(await screen.findByText('Webhook：发送成功')).toBeInTheDocument()
+    expect(screen.getByText('Telegram：对方返回 HTTP 401 Unauthorized')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '保存通知设置' }))
+    await waitFor(() => expect(saved).toMatchObject({ site_title: 'Simple Server Status', notify: { webhook_url: 'https://hook.example.com/x', offline_minutes: 10 } }))
+  })
+
+  it('两个表单互不吞掉未保存的编辑', async () => {
+    let current: Settings = SETTINGS
+    const saves: Settings[] = []
+    mockFetch({
+      'GET /api/admin/settings': () => ({ data: current }),
+      'PUT /api/admin/settings': (body: unknown) => {
+        current = body as Settings
+        saves.push(current)
+        return { data: body }
+      },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />)
+    // 通知表单改了但不保存
+    await user.type(await screen.findByLabelText('Webhook 地址'), 'https://hook.example.com/x')
+    // 保存站点表单：只提交站点字段，通知字段以已保存的设置为准
+    const title = screen.getByLabelText('站点标题')
+    await user.clear(title)
+    await user.type(title, '新标题')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]).toMatchObject({ site_title: '新标题', notify: NOTIFY })
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存' })).toBeEnabled())
+    // 通知表单中的输入仍然保留
+    expect(screen.getByLabelText('Webhook 地址')).toHaveValue('https://hook.example.com/x')
+    // 保存通知表单：提交体包含站点表单刚保存的新标题
+    await user.click(screen.getByRole('button', { name: '保存通知设置' }))
+    await waitFor(() => expect(saves).toHaveLength(2))
+    expect(saves[1]).toMatchObject({ site_title: '新标题', notify: { webhook_url: 'https://hook.example.com/x' } })
+    // 站点表单同样保留自己的编辑
+    expect(screen.getByLabelText('站点标题')).toHaveValue('新标题')
+  })
+
+  it('发送测试进行中按钮禁用并显示进行中文案', async () => {
+    const mocked = mockFetch({ 'GET /api/admin/settings': SETTINGS, 'POST /api/admin/notify/test': { webhook: 'ok', telegram: null } })
+    let release = () => {}
+    const gate = new Promise<void>((r) => (release = r))
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/admin/notify/test') await gate
+      return mocked(input, init)
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: '发送测试' }))
+    const busy = await screen.findByRole('button', { name: '发送中…' })
+    expect(busy).toBeDisabled()
+    release()
+    expect(await screen.findByText('Webhook：发送成功')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '发送测试' })).toBeEnabled()
   })
 })

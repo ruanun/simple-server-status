@@ -44,10 +44,11 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/public/site` | 站点信息：`{"site_title", "show_price"}` |
+| GET | `/api/public/site` | 站点信息：`{"site_title", "show_price", "announcement"}` |
 | GET | `/api/public/servers` | 所有可见服务器的 `ServerView` 数组 |
 | GET | `/api/public/servers/:id` | 单台服务器的 `ServerView`；不存在或未登录访问隐藏服务器时返回 404 |
 | GET | `/api/public/servers/:id/metrics?range=<range>` | 历史数据点数组，`range` 默认 `1h` |
+| GET | `/api/public/servers/:id/stats` | 在线率与当月每日流量，见下文；不存在或未登录访问隐藏服务器时返回 404 |
 | GET | `/api/public/ws` | 浏览器实时推送，见下文 |
 
 可见性规则：隐藏服务器只对已登录用户返回；价格字段（`price`、`currency`、`billing_cycle`）在设置「公开显示价格」关闭时只对已登录用户返回；任何公开接口都不返回 IP 与密钥。
@@ -59,6 +60,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `id`、`name`、`group`、`country`、`sort`、`hidden` | 服务器配置；`country` 为空时取 Agent 探测结果 |
 | `online` | 是否在线：连接存在且最近一次上报距今不超过 3 倍上报间隔（最少 6 秒） |
 | `last_seen` | 最近一次上报（或断开）时间 |
+| `uptime_24h` | 最近 24 小时在线率（百分比，0–100，保留 1 位小数）；窗口不足一个采样周期或服务器刚创建时为 `null`，每分钟随维护任务刷新一次 |
 | `static` | 静态信息，结构同 Agent 的 `hello`；从未连接过时为 `null` |
 | `metrics` | 最新一次上报，结构同 Agent 的 `report`（不含 `filter_id`）；无数据时为 `null` |
 | `traffic` | 当前周期流量：`in`、`out`、`used`（按 `mode` 计算）、`limit`（`null` 表示不限）、`mode`（`sum`/`in`/`out`）、`reset_day`、`period`（周期起始日 `YYYY-MM-DD`） |
@@ -83,6 +85,18 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 
 `cpu`、`mem`、`disk` 为百分比，`net_in`、`net_out` 为字节每秒。
 
+### GET /api/public/servers/:id/stats
+
+```json
+{
+  "uptime_24h": 99.8, "uptime_7d": 99.5,
+  "period_start": "2026-09-01", "period_end": "2026-09-30",
+  "daily": [{"day": "2026-09-01", "in": 123, "out": 45}]
+}
+```
+
+`uptime_24h`、`uptime_7d` 含义同 `ServerView.uptime_24h`，窗口分别为 24 小时、7 天（7 天在线率取 10 分钟级数据）。`period_start`、`period_end` 为当前计费周期（由服务器的 `traffic_reset_day` 决定）的起止日期（Dashboard 本地时区 `YYYY-MM-DD`）。`daily` 覆盖该周期从开始到今天的每一天，缺失的日期补 0，`in`、`out` 为当天入站、出站字节数。
+
 ## 登录与管理接口
 
 除 `POST /api/auth/login` 外均需要 `Authorization: Bearer <token>`。
@@ -92,17 +106,19 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | POST | `/api/auth/login` | `{"username", "password"}` | `{"token", "username"}` |
 | GET | `/api/auth/me` | — | `{"username"}` |
 | PUT | `/api/auth/password` | `{"old_password", "new_password"}` | `{"token"}`（新 token，旧 token 失效） |
-| GET | `/api/admin/servers` | — | `Server` 数组，每项额外带 `online` |
+| GET | `/api/admin/servers` | — | `Server` 数组，每项额外带 `online`、`agent_version`（当前连接或最近一次连接的 Agent 版本，未连接过为空）、`outdated`（Agent 版本低于 Dashboard 版本；任一方不是正式发布版本号时为 `false`）、`uptime_24h`（同 `ServerView`） |
 | POST | `/api/admin/servers` | `ServerInput` | 新建的 `Server`（含自动生成的 `id` 与 `secret`） |
 | PUT | `/api/admin/servers/:id` | `ServerInput` | 更新后的 `Server`；在线的 Agent 会立即收到新的 `config` |
-| DELETE | `/api/admin/servers/:id` | — | `{}`；同时删除历史与流量数据，在线的 Agent 收到 `stop` 后退出 |
+| DELETE | `/api/admin/servers/:id` | — | `{}`；同时删除历史、流量与通知状态，在线的 Agent 收到 `stop` 后退出 |
 | POST | `/api/admin/servers/:id/reset-secret` | — | `{"secret"}`；旧密钥立即失效，当前连接被断开 |
 | GET | `/api/admin/servers/:id/install?dashboard=<面板地址>` | — | `{"linux", "windows"}` 两条安装命令 |
 | PUT | `/api/admin/server-order` | `{"ids": [...]}` | `{}`；按数组顺序设置 `sort` |
 | GET | `/api/admin/settings` | — | `Settings` |
 | PUT | `/api/admin/settings` | `Settings` | 保存后的 `Settings` |
+| POST | `/api/admin/notify/test` | `NotifySettings` | `{"webhook": "ok" \| 错误信息 \| null, "telegram": ...}`，见下文 |
 | GET | `/api/admin/export` | — | 导出文件（见下文） |
 | POST | `/api/admin/import` | 导出文件 | `{"servers": <导入数量>}` |
+| GET | `/api/admin/overview` | — | `{"monthly_cost": [...], "expiring": [...]}`，见下文 |
 
 `install` 的 `dashboard` 参数必须是 `http(s)://主机[:端口][/路径]` 形式，否则返回 `invalid_input`。
 
@@ -123,8 +139,10 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `traffic_reset_day` | number | 1–28，传 0 视为 1 |
 | `report_interval` | number | 1–60 秒，传 0 使用设置中的默认上报间隔 |
 | `nic_include`、`nic_exclude`、`mount_exclude` | string[] | 网卡 / 挂载点过滤，含义见 [配置](configuration.md#服务器字段) |
+| `note` | string | 备注，仅后台可见，不超过 2000 个字符 |
+| `notify_muted` | bool | 开启后该服务器跳过全部通知规则 |
 
-`Server` 在 `ServerInput` 的基础上增加 `id`、`secret`、`sort`、`static_info`、`last_ip`、`last_seen`、`created_at`、`updated_at`。
+`Server` 在 `ServerInput` 的基础上增加 `id`、`secret`、`sort`、`static_info`、`last_ip`、`last_seen`、`created_at`、`updated_at`。其中 `last_seen` 与公开接口含义相同：有实时上报时为最近一次上报时间，否则为断开或最后记录的在线时间；为 0 表示从未上报。
 
 ### Settings
 
@@ -133,9 +151,54 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
   "site_title": "Simple Server Status",
   "show_price": false,
   "default_report_interval": 2,
-  "install_script_base": "https://github.com/ruanun/simple-server-status/releases/latest/download"
+  "install_script_base": "https://github.com/ruanun/simple-server-status/releases/latest/download",
+  "announcement": "",
+  "notify": {
+    "webhook_url": "", "telegram_token": "", "telegram_chat_id": "", "lang": "zh-CN",
+    "offline_enabled": true, "offline_minutes": 3,
+    "load_enabled": true, "load_cpu": 90, "load_mem": 90, "load_disk": 90, "load_minutes": 5,
+    "expire_enabled": true, "expire_days": 7,
+    "traffic_enabled": true, "traffic_percent": 90
+  }
 }
 ```
+
+`announcement` 显示在状态页顶部，不超过 1000 个字符，留空不显示；换行保留，`http(s)://` 链接自动转为可点击链接。`telegram_token` 属于敏感信息，公开接口不返回、日志不输出，仅登录后台可读写。
+
+`notify`（`NotifySettings`）字段：
+
+| 字段 | 类型 | 默认值 | 取值范围 | 说明 |
+|---|---|---|---|---|
+| `webhook_url` | string | `""` | 空或 `http(s)://` 地址 | 为空表示不启用 Webhook |
+| `telegram_token`、`telegram_chat_id` | string | `""` | — | 需同时为空或同时非空；均非空时启用 Telegram |
+| `lang` | string | `zh-CN` | `zh-CN`、`en-US` | 通知标题与正文使用的语言 |
+| `offline_enabled`、`offline_minutes` | bool、number | `true`、`3` | 分钟 1–1440 | 离线持续超过该时长即通知，恢复在线时通知并附带离线时长 |
+| `load_enabled`、`load_cpu`、`load_mem`、`load_disk`、`load_minutes` | bool、number | `true`、`90`、`90`、`90`、`5` | 阈值 1–100，分钟 1–10 | CPU / 内存 / 硬盘任一项最近该分钟数内平均值达到阈值即通知，全部回落后通知恢复 |
+| `expire_enabled`、`expire_days` | bool、number | `true`、`7` | 天 1–90 | 距到期不超过该天数时通知一次；每个到期日只提醒一次 |
+| `traffic_enabled`、`traffic_percent` | bool、number | `true`、`90` | 百分比 1–100 | 本计费周期流量用量达到该比例时通知一次；每个计费周期只提醒一次 |
+
+保存 `Settings` 时的校验：`webhook_url` 为空或 `http(s)` 地址；`telegram_token` 与 `telegram_chat_id` 需同时为空或同时非空；上表阈值需在取值范围内；`announcement` ≤ 1000 字符。违规返回 `invalid_input`，`message` 说明具体字段。
+
+### GET /api/admin/overview
+
+```json
+{
+  "monthly_cost": [{"currency": "$", "amount": 12.5, "servers": 3}],
+  "expiring": [{"id": "...", "name": "...", "expire_at": 1790000000, "days": 5}]
+}
+```
+
+`monthly_cost` 按币种汇总月均费用：`monthly` 原价、`quarterly` 除以 3、`yearly` 除以 12，结果保留 2 位小数；`once`、未设置付费周期或未设价格的服务器不计入；按币种原样分组（不做汇率换算），币种为空归为一组。`expiring` 为 30 天内到期（含已过期但未超过 30 天）的服务器，按剩余天数升序、同天按名称排序；`days` 为负数表示已过期。
+
+### POST /api/admin/notify/test
+
+请求体为 `NotifySettings`（可以是尚未保存的值）。同步向其中已启用的渠道各发送一条测试消息，不重试、不经过发送队列，响应示例：
+
+```json
+{"webhook": "ok", "telegram": null}
+```
+
+未启用的渠道为 `null`；已启用且发送成功为 `"ok"`，失败为错误信息字符串。未配置任何渠道时返回 `invalid_input`。
 
 ### 导出文件
 
@@ -143,7 +206,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 {"version": 1, "exported_at": 1790000000, "settings": {...}, "servers": [Server, ...]}
 ```
 
-包含全部服务器的 `secret`，不包含静态信息、最后在线 IP 与时间、历史数据和流量。导入时按 `id` 覆盖已有服务器、新增不存在的服务器，并用文件中的设置覆盖当前设置；密钥发生变化的服务器会断开旧连接。
+包含全部服务器的 `secret`、`note`、`notify_muted`，以及 `settings` 中的 `announcement` 与全部 `notify` 字段（含 Telegram Token）；不包含静态信息、最后在线 IP 与时间、历史数据和流量。导入时按 `id` 覆盖已有服务器、新增不存在的服务器，并用文件中的设置覆盖当前设置；密钥发生变化的服务器会断开旧连接。导出文件版本固定为 1；导入旧版本文件中缺少的字段取默认值。
 
 ## 浏览器 WebSocket
 
@@ -212,3 +275,29 @@ ID 不存在或密钥错误时返回 HTTP 401，Agent 随后每 5 分钟重试�
 ```json
 {"v":1,"type":"config","data":{"report_interval":2,"nic_include":[],"nic_exclude":[],"mount_exclude":["/boot"],"filter_id":"3f1a9c0b7e2d"}}
 ```
+
+## 通知（Webhook / Telegram）
+
+规则、渠道配置与默认值见 [配置 - 后台设置](configuration.md#通知)。状态变化时由后台的发送队列推送，单次请求超时 10 秒，失败后按 5 秒、30 秒、2 分钟重试共 3 次，最终失败只记日志；`POST /api/admin/notify/test` 不经过该队列，同步发送且不重试。
+
+Webhook：`POST`，`Content-Type: application/json`：
+
+```json
+{"event": "offline", "server_id": "...", "server_name": "...", "title": "[离线] node-1", "message": "服务器 node-1 已离线 5 分钟", "time": 1790000000}
+```
+
+`event` 取值：
+
+| event | 触发时机 |
+|---|---|
+| `offline` | 离线持续超过设定时长 |
+| `recovered` | 离线后恢复在线 |
+| `load` | CPU / 内存 / 硬盘持续高负载 |
+| `load_recovered` | 高负载恢复正常 |
+| `expire` | 距到期不超过设定天数 |
+| `traffic` | 本周期流量用量达到设定比例 |
+| `test` | 「发送测试」触发 |
+
+Telegram：`POST https://api.telegram.org/bot<token>/sendMessage`，请求体 `{"chat_id": "...", "text": "<title>\n<message>"}`，不使用 `parse_mode`。
+
+Telegram Token 与 Webhook 地址均不写入日志，发送失败时日志只记录渠道与错误类型。

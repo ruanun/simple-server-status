@@ -2,13 +2,13 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { EyeOff, GripVertical, MoreHorizontal, Plus } from 'lucide-react'
+import { BellOff, EyeOff, GripVertical, MoreHorizontal, Plus, StickyNote } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Flag } from '@/components/flag'
-import { OnlineDot } from '@/components/status-bits'
+import { AvailabilityText, LastReport, OnlineDot } from '@/components/status-bits'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useNow } from '@/hooks/use-now'
 import { useLang } from '@/i18n/use-lang'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
@@ -32,18 +33,21 @@ import type { AdminServer } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 import { InstallDialog } from './install-dialog'
+import { OverviewBar } from './overview-bar'
 import { ServerFormDialog } from './server-form'
 
 interface RowProps {
   server: AdminServer
   lang: Lang
+  now: number
   onEdit: () => void
   onInstall: () => void
+  onUpgrade: () => void
   onReset: () => void
   onDelete: () => void
 }
 
-function SortableRow({ server: s, lang, onEdit, onInstall, onReset, onDelete }: RowProps) {
+function SortableRow({ server: s, lang, now, onEdit, onInstall, onUpgrade, onReset, onDelete }: RowProps) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id })
   return (
@@ -64,12 +68,39 @@ function SortableRow({ server: s, lang, onEdit, onInstall, onReset, onDelete }: 
               <span className="sr-only">{t('form.hidden')}</span>
             </span>
           )}
+          {s.note && (
+            <span title={s.note} className="inline-flex text-muted-foreground">
+              <StickyNote className="size-3.5" aria-hidden />
+              <span className="sr-only">
+                {t('admin.note')}：{s.note}
+              </span>
+            </span>
+          )}
+          {s.notify_muted && (
+            <span title={t('form.notifyMuted')} className="inline-flex text-muted-foreground">
+              <BellOff className="size-3.5" aria-hidden />
+              <span className="sr-only">{t('form.notifyMuted')}</span>
+            </span>
+          )}
         </div>
       </TableCell>
       <TableCell className="hidden sm:table-cell">{s.group || '—'}</TableCell>
       <TableCell className="hidden font-mono text-xs md:table-cell">{s.last_ip || '—'}</TableCell>
+      <TableCell className="hidden text-xs tabular md:table-cell">
+        <LastReport ts={s.last_seen} now={now} />
+      </TableCell>
       <TableCell className="hidden text-xs md:table-cell">{s.expire_at ? formatDate(s.expire_at, lang) : t('expire.never')}</TableCell>
       <TableCell className="hidden text-xs tabular lg:table-cell">{s.report_interval}s</TableCell>
+      <TableCell className="hidden text-xs tabular lg:table-cell">
+        {s.agent_version ? (
+          <span className={cn(s.outdated && 'text-warn')} title={s.outdated ? t('admin.outdated') : undefined}>
+            {s.agent_version}
+          </span>
+        ) : (
+          '—'
+        )}
+      </TableCell>
+      <TableCell className="hidden text-xs lg:table-cell">{s.uptime_24h == null ? '—' : <AvailabilityText value={s.uptime_24h} />}</TableCell>
       <TableCell className="w-10 text-right">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -80,6 +111,7 @@ function SortableRow({ server: s, lang, onEdit, onInstall, onReset, onDelete }: 
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onEdit}>{t('admin.edit')}</DropdownMenuItem>
             <DropdownMenuItem onSelect={onInstall}>{t('admin.install')}</DropdownMenuItem>
+            {s.outdated && <DropdownMenuItem onSelect={onUpgrade}>{t('install.upgradeTitle')}</DropdownMenuItem>}
             <DropdownMenuItem onSelect={onReset}>{t('admin.resetSecret')}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onDelete} className="text-bad focus:text-bad">
@@ -97,10 +129,11 @@ type Confirm = { kind: 'delete' | 'reset'; server: AdminServer }
 export function ServersPage() {
   const { t } = useTranslation()
   const lang = useLang()
+  const now = useNow()
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({ queryKey: adminKeys.servers, queryFn: adminApi.servers, refetchInterval: 10_000 })
   const [editing, setEditing] = useState<AdminServer | 'new' | null>(null)
-  const [installFor, setInstallFor] = useState<AdminServer | null>(null)
+  const [installFor, setInstallFor] = useState<{ server: AdminServer; mode: 'install' | 'upgrade' } | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [order, setOrder] = useState<string[] | null>(null)
 
@@ -140,7 +173,7 @@ export function ServersPage() {
       } else {
         await adminApi.resetSecret(server.id)
         toast.success(t('admin.secretReset'))
-        setInstallFor(server)
+        setInstallFor({ server, mode: 'install' })
       }
       await qc.invalidateQueries({ queryKey: adminKeys.servers })
     } catch (err) {
@@ -164,8 +197,11 @@ export function ServersPage() {
                   <TableHead>{t('admin.name')}</TableHead>
                   <TableHead className="hidden sm:table-cell">{t('admin.group')}</TableHead>
                   <TableHead className="hidden md:table-cell">{t('admin.ip')}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t('admin.lastSeen')}</TableHead>
                   <TableHead className="hidden md:table-cell">{t('admin.expire')}</TableHead>
                   <TableHead className="hidden lg:table-cell">{t('admin.interval')}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t('admin.agent')}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t('admin.availability')}</TableHead>
                   <TableHead className="w-10">
                     <span className="sr-only">{t('admin.actions')}</span>
                   </TableHead>
@@ -177,8 +213,10 @@ export function ServersPage() {
                     key={s.id}
                     server={s}
                     lang={lang}
+                    now={now}
                     onEdit={() => setEditing(s)}
-                    onInstall={() => setInstallFor(s)}
+                    onInstall={() => setInstallFor({ server: s, mode: 'install' })}
+                    onUpgrade={() => setInstallFor({ server: s, mode: 'upgrade' })}
                     onReset={() => setConfirm({ kind: 'reset', server: s })}
                     onDelete={() => setConfirm({ kind: 'delete', server: s })}
                   />
@@ -199,6 +237,7 @@ export function ServersPage() {
           {t('admin.add')}
         </Button>
       </div>
+      <OverviewBar />
       {body}
 
       {editing !== null && (
@@ -208,11 +247,11 @@ export function ServersPage() {
           onClose={() => setEditing(null)}
           onSaved={(saved, created) => {
             setEditing(null)
-            if (created) setInstallFor(saved)
+            if (created) setInstallFor({ server: saved, mode: 'install' })
           }}
         />
       )}
-      <InstallDialog server={installFor} onClose={() => setInstallFor(null)} />
+      <InstallDialog server={installFor?.server ?? null} mode={installFor?.mode} onClose={() => setInstallFor(null)} />
       <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

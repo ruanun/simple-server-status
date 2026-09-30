@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
-import { ExpiryText, StatusPill } from '@/components/status-bits'
+import { AvailabilityText, ExpiryText, StatusPill } from '@/components/status-bits'
 import { UsageBar } from '@/components/usage-bar'
 import { useLang } from '@/i18n/use-lang'
 import { daysUntil, formatAgo, formatBytes, formatPercent, formatSpeed } from '@/lib/format'
@@ -47,7 +47,9 @@ export function ServerCard({ server: s, now }: { server: ServerView; now: number
       </div>
       <div className="mt-1 flex justify-between gap-2 text-xs text-muted-foreground">
         <span className="truncate">{osLabel(s)}</span>
-        <span className="shrink-0">
+        <span className="flex shrink-0 items-center gap-1.5">
+          <AvailabilityText value={s.uptime_24h} label={t('status.availability')} />
+          {s.uptime_24h != null && <span aria-hidden>·</span>}
           <ExpiryText days={daysUntil(s.expire_at, now)} />
         </span>
       </div>

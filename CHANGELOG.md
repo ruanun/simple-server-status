@@ -13,6 +13,7 @@
 - Agent：WebSocket 长连接上报，参数由 Dashboard 下发，支持 Linux systemd 与 Windows 服务。
 - 前端：React 19 + shadcn/ui 重写，极简单色风格，独立详情页与历史图表，中英文与亮暗主题。
 - 部署：Docker 多架构镜像；安装脚本参数为 `--dashboard/--id/--secret`，后台可随时查看安装命令。
+- 状态页与后台增强：在线率、每日流量、Agent 版本与升级入口、费用汇总与到期列表、备注、公告、卡片排序，以及离线 / 高负载 / 到期 / 流量通知（Webhook、Telegram）。
 
 ## [1.2.0] - 2025-11-15
 

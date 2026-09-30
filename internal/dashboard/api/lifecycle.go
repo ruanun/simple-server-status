@@ -73,10 +73,19 @@ func (a *API) touchOnline(ctx context.Context) {
 		if !a.Hub.Get(srv.ID).Online {
 			continue
 		}
-		if err := a.Store.SetLastSeen(ctx, srv.ID, now); err != nil && !errors.Is(err, store.ErrNotFound) {
-			a.Log.Warn("记录最后在线时间失败", "id", srv.ID, "err", err)
-		}
+		a.saveLastSeen(ctx, srv.ID, now)
 	}
+}
+
+// saveLastSeen 写入最后在线时间并同步缓存
+func (a *API) saveLastSeen(ctx context.Context, id string, ts int64) {
+	if err := a.Store.SetLastSeen(ctx, id, ts); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			a.Log.Warn("记录最后在线时间失败", "id", id, "err", err)
+		}
+		return
+	}
+	a.updateCached(id, func(s *store.Server) { s.LastSeen = ts })
 }
 
 // RunMaintenance 每分钟执行一次周期维护任务，直到 ctx 结束
@@ -89,6 +98,7 @@ func (a *API) RunMaintenance(ctx context.Context) {
 			return
 		case <-t.C:
 			a.touchOnline(ctx)
+			a.refreshUptime(ctx)
 		}
 	}
 }

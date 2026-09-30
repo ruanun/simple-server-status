@@ -1,7 +1,8 @@
 import { act, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { ThemeProvider, useTheme } from './theme'
+import { ThemeProvider } from './theme'
+import { useTheme } from './theme-context'
 
 function Probe() {
   const { theme, resolved, setTheme } = useTheme()

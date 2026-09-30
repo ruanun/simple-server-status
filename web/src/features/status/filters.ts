@@ -41,7 +41,7 @@ export function sameFilter(a: Filter, b: Filter): boolean {
   return true
 }
 
-export type SortKey = 'name' | 'cpu' | 'mem' | 'disk' | 'traffic' | 'speed' | 'uptime' | 'expire'
+export type SortKey = 'name' | 'cpu' | 'mem' | 'disk' | 'traffic' | 'speed' | 'uptime' | 'expire' | 'availability'
 
 const MISSING = -1
 const NEVER = Number.MAX_SAFE_INTEGER
@@ -65,6 +65,8 @@ function sortValue(s: ServerView, key: SortKey): number | string {
       return m ? m.uptime : MISSING
     case 'expire':
       return s.expire_at ?? NEVER
+    case 'availability':
+      return s.uptime_24h ?? MISSING
   }
 }
 

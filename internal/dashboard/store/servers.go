@@ -36,16 +36,18 @@ type Server struct {
 	LastSeen        int64        `json:"last_seen"`
 	CreatedAt       int64        `json:"created_at"`
 	UpdatedAt       int64        `json:"updated_at"`
+	Note            string       `json:"note"`
+	NotifyMuted     bool         `json:"notify_muted"`
 }
 
 const selectCols = `id, name, secret, grp, country, sort, hidden, price, currency, billing_cycle,
  expire_at, traffic_limit, traffic_mode, traffic_reset_day, report_interval,
- nic_include, nic_exclude, mount_exclude, static_info, last_ip, last_seen, created_at, updated_at`
+ nic_include, nic_exclude, mount_exclude, static_info, last_ip, last_seen, created_at, updated_at, note, notify_muted`
 
 const insertSQL = `INSERT INTO servers (id, name, secret, grp, country, sort, hidden, price, currency, billing_cycle,
  expire_at, traffic_limit, traffic_mode, traffic_reset_day, report_interval,
- nic_include, nic_exclude, mount_exclude, created_at, updated_at)
- VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+ nic_include, nic_exclude, mount_exclude, created_at, updated_at, note, notify_muted)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 const upsertSQL = insertSQL + ` ON CONFLICT(id) DO UPDATE SET
  name=excluded.name, secret=excluded.secret, grp=excluded.grp, country=excluded.country, sort=excluded.sort,
@@ -53,7 +55,7 @@ const upsertSQL = insertSQL + ` ON CONFLICT(id) DO UPDATE SET
  expire_at=excluded.expire_at, traffic_limit=excluded.traffic_limit, traffic_mode=excluded.traffic_mode,
  traffic_reset_day=excluded.traffic_reset_day, report_interval=excluded.report_interval,
  nic_include=excluded.nic_include, nic_exclude=excluded.nic_exclude, mount_exclude=excluded.mount_exclude,
- updated_at=excluded.updated_at`
+ note=excluded.note, notify_muted=excluded.notify_muted, updated_at=excluded.updated_at`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -67,14 +69,16 @@ func scanServer(row scanner) (Server, error) {
 		expire, limit         sql.NullInt64
 		nicIn, nicEx, mountEx string
 		static                sql.NullString
+		muted                 int
 	)
 	err := row.Scan(&s.ID, &s.Name, &s.Secret, &s.Group, &s.Country, &s.Sort, &hidden, &price, &s.Currency,
 		&s.BillingCycle, &expire, &limit, &s.TrafficMode, &s.TrafficResetDay, &s.ReportInterval,
-		&nicIn, &nicEx, &mountEx, &static, &s.LastIP, &s.LastSeen, &s.CreatedAt, &s.UpdatedAt)
+		&nicIn, &nicEx, &mountEx, &static, &s.LastIP, &s.LastSeen, &s.CreatedAt, &s.UpdatedAt, &s.Note, &muted)
 	if err != nil {
 		return s, err
 	}
 	s.Hidden = hidden != 0
+	s.NotifyMuted = muted != 0
 	if price.Valid {
 		v := price.Float64
 		s.Price = &v
@@ -163,7 +167,7 @@ func insertArgs(s Server) []any {
 	return []any{s.ID, s.Name, s.Secret, s.Group, s.Country, s.Sort, boolInt(s.Hidden), nullFloat(s.Price),
 		s.Currency, s.BillingCycle, nullInt(s.ExpireAt), nullInt(s.TrafficLimit), s.TrafficMode,
 		s.TrafficResetDay, s.ReportInterval, encodeList(s.NICInclude), encodeList(s.NICExclude),
-		encodeList(s.MountExclude), s.CreatedAt, s.UpdatedAt}
+		encodeList(s.MountExclude), s.CreatedAt, s.UpdatedAt, s.Note, boolInt(s.NotifyMuted)}
 }
 
 // ListServers 按 sort、name 返回全部服务器
@@ -213,10 +217,11 @@ func (s *Store) UpdateServer(ctx context.Context, sv Server) error {
 	applyDefaults(&sv)
 	return affected(s.db.ExecContext(ctx, `UPDATE servers SET name=?, grp=?, country=?, hidden=?, price=?,
  currency=?, billing_cycle=?, expire_at=?, traffic_limit=?, traffic_mode=?, traffic_reset_day=?, report_interval=?,
- nic_include=?, nic_exclude=?, mount_exclude=?, updated_at=? WHERE id=?`,
+ nic_include=?, nic_exclude=?, mount_exclude=?, note=?, notify_muted=?, updated_at=? WHERE id=?`,
 		sv.Name, sv.Group, sv.Country, boolInt(sv.Hidden), nullFloat(sv.Price), sv.Currency, sv.BillingCycle,
 		nullInt(sv.ExpireAt), nullInt(sv.TrafficLimit), sv.TrafficMode, sv.TrafficResetDay, sv.ReportInterval,
-		encodeList(sv.NICInclude), encodeList(sv.NICExclude), encodeList(sv.MountExclude), time.Now().Unix(), sv.ID))
+		encodeList(sv.NICInclude), encodeList(sv.NICExclude), encodeList(sv.MountExclude), sv.Note, boolInt(sv.NotifyMuted),
+		time.Now().Unix(), sv.ID))
 }
 
 // DeleteServer 删除服务器及其历史与流量数据
@@ -226,6 +231,8 @@ func (s *Store) DeleteServer(ctx context.Context, id string) error {
 			`DELETE FROM metrics_1m WHERE server_id = ?`,
 			`DELETE FROM metrics_10m WHERE server_id = ?`,
 			`DELETE FROM traffic_monthly WHERE server_id = ?`,
+			`DELETE FROM traffic_daily WHERE server_id = ?`,
+			`DELETE FROM notify_state WHERE server_id = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, id); err != nil {
 				return err

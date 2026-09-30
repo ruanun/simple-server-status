@@ -9,6 +9,8 @@ import type { ServerView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 import { buildChips, sameFilter, type Filter } from './filters'
+import { SortSelect } from './sort-select'
+import type { SortState } from './sort-state'
 
 export type ViewMode = 'card' | 'list'
 
@@ -20,10 +22,12 @@ interface Props {
   onQuery: (q: string) => void
   view: ViewMode
   onView: (v: ViewMode) => void
+  sort: SortState
+  onSort: (s: SortState) => void
 }
 
-/** FilterBar 筛选标签（全部 / 分组 / 地区 / 离线）、名称搜索与视图切换 */
-export function FilterBar({ servers, filter, onFilter, query, onQuery, view, onView }: Props) {
+/** FilterBar 筛选标签（全部 / 分组 / 地区 / 离线）、名称搜索、排序与视图切换 */
+export function FilterBar({ servers, filter, onFilter, query, onQuery, view, onView, sort, onSort }: Props) {
   const { t } = useTranslation()
   const chips = useMemo(() => buildChips(servers), [servers])
 
@@ -66,6 +70,7 @@ export function FilterBar({ servers, filter, onFilter, query, onQuery, view, onV
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder={t('filter.search')} className="h-8 w-full pl-8 text-sm md:w-48" />
         </div>
+        <SortSelect sort={sort} onSort={onSort} />
         <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && onView(v as ViewMode)}>
           <ToggleGroupItem value="card" aria-label={t('view.card')}>
             <LayoutGrid className="size-4" />

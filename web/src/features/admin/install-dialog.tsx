@@ -34,8 +34,8 @@ function CopyBlock({ text }: { text: string }) {
   )
 }
 
-/** InstallDialog 显示一键安装命令（每次打开重新获取，重置密钥后即为新命令）；面板地址默认取当前页面地址，可修改 */
-export function InstallDialog({ server, onClose }: { server: AdminServer | null; onClose: () => void }) {
+/** InstallDialog 显示一键安装命令（每次打开重新获取，重置密钥后即为新命令）；面板地址默认取当前页面地址，可修改；升级模式复用同一套命令 */
+export function InstallDialog({ server, mode = 'install', onClose }: { server: AdminServer | null; mode?: 'install' | 'upgrade'; onClose: () => void }) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(() => window.location.origin)
   const [dashboard, setDashboard] = useState(draft)
@@ -56,8 +56,8 @@ export function InstallDialog({ server, onClose }: { server: AdminServer | null;
     <Dialog open={server !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{t('install.title')}</DialogTitle>
-          <DialogDescription>{t('install.desc')}</DialogDescription>
+          <DialogTitle>{mode === 'upgrade' ? t('install.upgradeTitle') : t('install.title')}</DialogTitle>
+          <DialogDescription>{mode === 'upgrade' ? t('install.upgradeDesc') : t('install.desc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           <Label htmlFor="install_dashboard">{t('install.dashboard')}</Label>

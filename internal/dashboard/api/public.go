@@ -15,12 +15,13 @@ func (a *API) registerPublic(r *gin.Engine) {
 	g.GET("/servers", a.publicServers)
 	g.GET("/servers/:id", a.publicServer)
 	g.GET("/servers/:id/metrics", a.publicMetrics)
+	g.GET("/servers/:id/stats", a.publicStats)
 	g.GET("/ws", a.publicWS)
 }
 
 func (a *API) publicSite(c *gin.Context) {
 	st := a.currentSettings()
-	respond(c, gin.H{"site_title": st.SiteTitle, "show_price": st.ShowPrice})
+	respond(c, gin.H{"site_title": st.SiteTitle, "show_price": st.ShowPrice, "announcement": st.Announcement})
 }
 
 func (a *API) publicServers(c *gin.Context) {

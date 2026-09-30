@@ -31,7 +31,7 @@ const maxImportSize = 10 << 20
 
 func (a *API) adminImport(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxImportSize)
-	var f exportFile
+	f := exportFile{Settings: store.DefaultSettings()}
 	if err := c.ShouldBindJSON(&f); err != nil { // 超过大小上限时同样返回 bad_request
 		fail(c, http.StatusBadRequest, "bad_request", "文件格式错误")
 		return

@@ -80,6 +80,17 @@ func (s *Store) Rollup10m(ctx context.Context, from, to int64) error {
 	return err
 }
 
+// CountMetrics 返回 from <= ts < to 的数据点数
+func (s *Store) CountMetrics(ctx context.Context, table, serverID string, from, to int64) (int, error) {
+	q, err := sqlFor(table, `SELECT COUNT(*) FROM {t} WHERE server_id = ? AND ts >= ? AND ts < ?`)
+	if err != nil {
+		return 0, err
+	}
+	var n int
+	err = s.db.QueryRowContext(ctx, q, serverID, from, to).Scan(&n)
+	return n, err
+}
+
 // DeleteMetricsBefore 删除早于 ts 的数据，返回删除行数
 func (s *Store) DeleteMetricsBefore(ctx context.Context, table string, ts int64) (int64, error) {
 	q, err := sqlFor(table, `DELETE FROM {t} WHERE ts < ?`)

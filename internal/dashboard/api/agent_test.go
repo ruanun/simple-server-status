@@ -209,6 +209,9 @@ func TestTouchOnlineWritesLastSeen(t *testing.T) {
 	if got.LastSeen != e.clock.Now().Unix() {
 		t.Fatalf("在线服务器应写入最后在线时间，实际 %d", got.LastSeen)
 	}
+	if cached, _ := e.api.server(on.ID); cached.LastSeen != e.clock.Now().Unix() {
+		t.Fatalf("缓存中的最后在线时间未同步，实际 %d", cached.LastSeen)
+	}
 	if got, _ := e.st.GetServer(context.Background(), off.ID); got.LastSeen != 0 {
 		t.Fatalf("离线服务器不应写入，实际 %d", got.LastSeen)
 	}
@@ -231,5 +234,30 @@ func TestAgentRegistryAddConnectsHubAtomically(t *testing.T) {
 	h.Disconnect("s", cur.session)
 	if h.Get("s").Connected {
 		t.Fatal("registry 中当前连接的会话号应与 Hub 一致")
+	}
+}
+
+func TestAgentHelloUpdatesAdminList(t *testing.T) {
+	e := newTestEnv(t)
+	s := e.addServer(store.Server{Name: "a"})
+	conn, _, err := e.dialAgent(s.ID, s.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	sendMsg(t, conn, proto.TypeHello, proto.Hello{OS: "linux", Country: "JP"})
+	readMsg(t, conn) // config
+
+	code, body := e.do("GET", "/api/admin/servers", e.adminToken(), nil)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 %d", code)
+	}
+	list := decodeData[[]struct {
+		ID         string       `json:"id"`
+		LastIP     string       `json:"last_ip"`
+		StaticInfo *proto.Hello `json:"static_info"`
+	}](t, body)
+	if len(list) != 1 || list[0].LastIP == "" || list[0].StaticInfo == nil || list[0].StaticInfo.Country != "JP" {
+		t.Fatalf("后台列表未反映 Agent 上报的 IP 与静态信息: %+v", list)
 	}
 }

@@ -84,11 +84,12 @@ func Run(ctx context.Context, o Options) error {
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); rec.Run(bgCtx) }()
 	go func() { defer wg.Done(); tr.Run(bgCtx, o.Log) }()
 	go func() { defer wg.Done(); a.RunBroadcaster(bgCtx) }()
 	go func() { defer wg.Done(); a.RunMaintenance(bgCtx) }()
+	go func() { defer wg.Done(); a.RunNotifier(bgCtx) }()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

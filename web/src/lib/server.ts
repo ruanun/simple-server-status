@@ -47,3 +47,10 @@ export function osLabel(s: ServerView): string {
 export function sortServers(list: ServerView[]): ServerView[] {
   return [...list].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
 }
+
+/** availabilityLevel 在线率颜色等级：< 95% 红，< 99% 琥珀 */
+export function availabilityLevel(v: number): 'ok' | 'warn' | 'bad' {
+  if (v < 95) return 'bad'
+  if (v < 99) return 'warn'
+  return 'ok'
+}

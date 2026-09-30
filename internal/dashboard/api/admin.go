@@ -30,8 +30,10 @@ func (a *API) registerAdmin(r *gin.Engine) {
 	g.PUT("/admin/server-order", a.adminServerOrder)
 	g.GET("/admin/settings", a.adminGetSettings)
 	g.PUT("/admin/settings", a.adminSaveSettings)
+	g.POST("/admin/notify/test", a.adminNotifyTest)
 	g.GET("/admin/export", a.adminExport)
 	g.POST("/admin/import", a.adminImport)
+	g.GET("/admin/overview", a.adminOverview)
 }
 
 // serverInput 后台可编辑的服务器字段
@@ -51,6 +53,8 @@ type serverInput struct {
 	NICInclude      []string `json:"nic_include"`
 	NICExclude      []string `json:"nic_exclude"`
 	MountExclude    []string `json:"mount_exclude"`
+	Note            string   `json:"note"`
+	NotifyMuted     bool     `json:"notify_muted"`
 }
 
 var (
@@ -63,6 +67,10 @@ func (in *serverInput) normalize(defaultInterval int) error {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || utf8.RuneCountInString(in.Name) > 64 {
 		return errors.New("名称不能为空且不超过 64 个字符")
+	}
+	in.Note = strings.TrimSpace(in.Note)
+	if utf8.RuneCountInString(in.Note) > 2000 {
+		return errors.New("备注不超过 2000 个字符")
 	}
 	in.Group = strings.TrimSpace(in.Group)
 	in.Country = strings.ToUpper(strings.TrimSpace(in.Country))
@@ -109,13 +117,15 @@ func (in serverInput) apply(s *store.Server) {
 	s.Price, s.Currency, s.BillingCycle, s.ExpireAt = in.Price, in.Currency, in.BillingCycle, in.ExpireAt
 	s.TrafficLimit, s.TrafficMode, s.TrafficResetDay = in.TrafficLimit, in.TrafficMode, in.TrafficResetDay
 	s.ReportInterval, s.NICInclude, s.NICExclude, s.MountExclude = in.ReportInterval, in.NICInclude, in.NICExclude, in.MountExclude
+	s.Note, s.NotifyMuted = in.Note, in.NotifyMuted
 }
 
 func inputFrom(s store.Server) serverInput {
 	return serverInput{Name: s.Name, Group: s.Group, Country: s.Country, Hidden: s.Hidden, Price: s.Price,
 		Currency: s.Currency, BillingCycle: s.BillingCycle, ExpireAt: s.ExpireAt, TrafficLimit: s.TrafficLimit,
 		TrafficMode: s.TrafficMode, TrafficResetDay: s.TrafficResetDay, ReportInterval: s.ReportInterval,
-		NICInclude: s.NICInclude, NICExclude: s.NICExclude, MountExclude: s.MountExclude}
+		NICInclude: s.NICInclude, NICExclude: s.NICExclude, MountExclude: s.MountExclude,
+		Note: s.Note, NotifyMuted: s.NotifyMuted}
 }
 
 // bindServerInput 解析并校验请求体，失败时已输出 400
@@ -142,13 +152,30 @@ func (a *API) afterServerChange(ctx context.Context) {
 
 type adminServer struct {
 	store.Server
-	Online bool `json:"online"`
+	Online       bool     `json:"online"`
+	AgentVersion string   `json:"agent_version"`
+	Outdated     bool     `json:"outdated"`
+	Uptime24h    *float64 `json:"uptime_24h"`
 }
 
 func (a *API) adminListServers(c *gin.Context) {
 	list := []adminServer{}
 	for _, s := range a.serverList() {
-		list = append(list, adminServer{Server: s, Online: a.Hub.Get(s.ID).Online})
+		live := a.Hub.Get(s.ID)
+		// 与公开视图一致：有实时上报时 last_seen 取最近一次上报时间
+		if live.LastReport > 0 {
+			s.LastSeen = live.LastReport
+		}
+		static := s.StaticInfo
+		if live.Static != nil {
+			static = live.Static
+		}
+		ver := ""
+		if static != nil {
+			ver = static.AgentVersion
+		}
+		list = append(list, adminServer{Server: s, Online: live.Online, AgentVersion: ver,
+			Outdated: agentOutdated(ver, a.Version), Uptime24h: a.cachedUptime(s.ID)})
 	}
 	respond(c, list)
 }
@@ -213,6 +240,7 @@ func (a *API) adminDeleteServer(c *gin.Context) {
 	a.Hub.Remove(id)
 	a.Traffic.Forget(id)
 	a.History.Forget(id)
+	a.notifier.Forget(id)
 	respond(c, gin.H{})
 }
 
@@ -327,7 +355,11 @@ func normalizeSettings(st *store.Settings) error {
 	if !strings.HasPrefix(st.InstallScriptBase, "http://") && !strings.HasPrefix(st.InstallScriptBase, "https://") {
 		return errors.New("安装脚本地址需以 http:// 或 https:// 开头")
 	}
-	return nil
+	st.Announcement = strings.TrimSpace(st.Announcement)
+	if utf8.RuneCountInString(st.Announcement) > 1000 {
+		return errors.New("公告不超过 1000 个字符")
+	}
+	return normalizeNotify(&st.Notify)
 }
 
 func (a *API) adminGetSettings(c *gin.Context) {
@@ -335,7 +367,7 @@ func (a *API) adminGetSettings(c *gin.Context) {
 }
 
 func (a *API) adminSaveSettings(c *gin.Context) {
-	var st store.Settings
+	st := store.DefaultSettings()
 	if err := c.ShouldBindJSON(&st); err != nil {
 		fail(c, http.StatusBadRequest, "bad_request", "请求格式错误")
 		return

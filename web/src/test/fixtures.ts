@@ -57,6 +57,7 @@ export function makeServer(overrides: Partial<ServerView> = {}): ServerView {
     metrics: makeMetrics(),
     traffic: { in: 300 * 1024 ** 3, out: 100 * 1024 ** 3, used: 400 * 1024 ** 3, limit: 1024 ** 4, mode: 'sum', reset_day: 1, period: '2026-09-01' },
     expire_at: null,
+    uptime_24h: 99.9,
     ...overrides,
   }
 }
@@ -81,12 +82,17 @@ export function makeAdminServer(overrides: Partial<AdminServer> = {}): AdminServ
     nic_include: [],
     nic_exclude: [],
     mount_exclude: [],
+    note: '',
+    notify_muted: false,
     static_info: makeHello(),
     last_ip: '1.2.3.4',
     last_seen: 1_700_000_000,
     created_at: 1_700_000_000,
     updated_at: 1_700_000_000,
     online: true,
+    agent_version: '2.0.0',
+    outdated: false,
+    uptime_24h: 99.9,
     ...overrides,
   }
 }

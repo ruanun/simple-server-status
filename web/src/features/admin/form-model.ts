@@ -28,6 +28,8 @@ export const formSchema = z.object({
   nic_include: z.string(),
   nic_exclude: z.string(),
   mount_exclude: z.string(),
+  note: z.string().max(2000, 'form.noteTooLong'),
+  notify_muted: z.boolean(),
 })
 
 export type FormValues = z.infer<typeof formSchema>
@@ -67,6 +69,8 @@ export function fromServer(s: AdminServer | null): FormValues {
     nic_include: (s?.nic_include ?? []).join(', '),
     nic_exclude: (s?.nic_exclude ?? []).join(', '),
     mount_exclude: (s?.mount_exclude ?? []).join(', '),
+    note: s?.note ?? '',
+    notify_muted: s?.notify_muted ?? false,
   }
 }
 
@@ -88,5 +92,7 @@ export function toInput(v: FormValues): ServerInput {
     nic_include: splitList(v.nic_include),
     nic_exclude: splitList(v.nic_exclude),
     mount_exclude: splitList(v.mount_exclude),
+    note: v.note.trim(),
+    notify_muted: v.notify_muted,
   }
 }

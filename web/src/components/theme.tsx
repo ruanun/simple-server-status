@@ -1,16 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-export type Theme = 'light' | 'dark' | 'system'
-
-interface ThemeState {
-  theme: Theme
-  resolved: 'light' | 'dark'
-  setTheme: (t: Theme) => void
-}
+import { ThemeContext, type Theme, type ThemeState } from './theme-context'
 
 const KEY = 'sss.theme'
 const QUERY = '(prefers-color-scheme: dark)'
-const ThemeContext = createContext<ThemeState | null>(null)
 
 function readTheme(): Theme {
   const v = localStorage.getItem(KEY)
@@ -47,10 +40,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [theme, resolved],
   )
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme(): ThemeState {
-  const v = useContext(ThemeContext)
-  if (!v) throw new Error('useTheme 必须在 ThemeProvider 内使用')
-  return v
 }

@@ -12,7 +12,7 @@ import {
 import { setLang } from '@/i18n'
 import { useLang } from '@/i18n/use-lang'
 
-import { useTheme, type Theme } from './theme'
+import { useTheme, type Theme } from './theme-context'
 
 export function ThemeToggle() {
   const { theme, resolved, setTheme } = useTheme()

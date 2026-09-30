@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
+	"github.com/ruanun/simple-server-status/internal/dashboard/traffic"
 	"github.com/ruanun/simple-server-status/internal/proto"
 )
 
@@ -28,6 +29,7 @@ type ServerView struct {
 	Hidden       bool          `json:"hidden"`
 	Online       bool          `json:"online"`
 	LastSeen     int64         `json:"last_seen"`
+	Uptime24h    *float64      `json:"uptime_24h"`
 	Static       *proto.Hello  `json:"static"`
 	Metrics      *proto.Report `json:"metrics"`
 	Traffic      TrafficView   `json:"traffic"`
@@ -37,22 +39,13 @@ type ServerView struct {
 	BillingCycle string        `json:"billing_cycle,omitempty"`
 }
 
-func trafficUsed(mode string, in, out int64) int64 {
-	switch mode {
-	case "in":
-		return in
-	case "out":
-		return out
-	}
-	return in + out
-}
-
 // view 组合配置、实时状态与流量
 func (a *API) view(ctx context.Context, srv store.Server, showPrice bool) ServerView {
 	live := a.Hub.Get(srv.ID)
 	v := ServerView{
 		ID: srv.ID, Name: srv.Name, Group: srv.Group, Country: srv.Country, Sort: srv.Sort, Hidden: srv.Hidden,
-		Online: live.Online, LastSeen: srv.LastSeen, Static: srv.StaticInfo, Metrics: publicMetrics(live.Report), ExpireAt: srv.ExpireAt,
+		Online: live.Online, LastSeen: srv.LastSeen, Uptime24h: a.cachedUptime(srv.ID), Static: srv.StaticInfo,
+		Metrics: publicMetrics(live.Report), ExpireAt: srv.ExpireAt,
 	}
 	if live.Static != nil {
 		v.Static = live.Static
@@ -67,7 +60,7 @@ func (a *API) view(ctx context.Context, srv store.Server, showPrice bool) Server
 	if err != nil {
 		a.Log.Warn("读取流量失败", "id", srv.ID, "err", err)
 	}
-	v.Traffic = TrafficView{In: in, Out: out, Used: trafficUsed(srv.TrafficMode, in, out), Limit: srv.TrafficLimit,
+	v.Traffic = TrafficView{In: in, Out: out, Used: traffic.Used(srv.TrafficMode, in, out), Limit: srv.TrafficLimit,
 		Mode: srv.TrafficMode, ResetDay: srv.TrafficResetDay, Period: period}
 	if showPrice {
 		v.Price, v.Currency, v.BillingCycle = srv.Price, srv.Currency, srv.BillingCycle

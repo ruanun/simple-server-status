@@ -18,10 +18,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage, tokenStore } from '@/lib/api'
 import { downloadJson } from '@/lib/download'
 import type { Settings } from '@/lib/types'
+
+import { NotifySettingsForm } from './notify-settings'
 
 function Card({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
@@ -35,6 +38,7 @@ function Card({ title, desc, children }: { title: string; desc?: string; childre
   )
 }
 
+/** SiteSettingsForm 站点设置；保存时以缓存中最新的设置为基础只覆盖站点字段，避免吞掉通知表单已保存的内容 */
 function SiteSettingsForm({ initial }: { initial: Settings }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -45,8 +49,18 @@ function SiteSettingsForm({ initial }: { initial: Settings }) {
     e.preventDefault()
     setPending(true)
     try {
-      await adminApi.saveSettings({ ...s, default_report_interval: Number(s.default_report_interval) })
-      await Promise.all([qc.invalidateQueries({ queryKey: adminKeys.settings }), qc.invalidateQueries({ queryKey: ['site'] })])
+      const latest = qc.getQueryData<Settings>(adminKeys.settings) ?? initial
+      const saved = await adminApi.saveSettings({
+        ...latest,
+        site_title: s.site_title,
+        show_price: s.show_price,
+        default_report_interval: Number(s.default_report_interval),
+        install_script_base: s.install_script_base,
+        announcement: s.announcement,
+      })
+      // 直接更新缓存而不让表单重新挂载，另一个表单中未保存的编辑得以保留
+      qc.setQueryData(adminKeys.settings, saved)
+      await qc.invalidateQueries({ queryKey: ['site'] })
       toast.success(t('settings.saved'))
     } catch (err) {
       toast.error(errorMessage(err))
@@ -79,6 +93,11 @@ function SiteSettingsForm({ initial }: { initial: Settings }) {
       <div className="space-y-1.5">
         <Label htmlFor="install_script_base">{t('settings.scriptBase')}</Label>
         <Input id="install_script_base" value={s.install_script_base} onChange={(e) => setS({ ...s, install_script_base: e.target.value })} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="announcement">{t('settings.announcement')}</Label>
+        <Textarea id="announcement" rows={3} maxLength={1000} value={s.announcement} onChange={(e) => setS({ ...s, announcement: e.target.value })} />
+        <p className="text-xs text-muted-foreground">{t('settings.announcementHint')}</p>
       </div>
       <Button type="submit" disabled={pending}>
         {t('settings.save')}
@@ -141,7 +160,7 @@ function PasswordForm() {
   )
 }
 
-function BackupPanel() {
+function BackupPanel({ onImported }: { onImported: () => void }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -180,7 +199,9 @@ function BackupPanel() {
     setImportOpen(false)
     try {
       const r = await adminApi.importData(pendingImport.data)
+      // 等设置查询重新拉取完成后再让两个表单重新挂载，避免读到导入前的缓存值
       await qc.invalidateQueries()
+      onImported()
       toast.success(t('settings.importDone', { count: r.servers }))
     } catch (err) {
       toast.error(errorMessage(err))
@@ -227,23 +248,29 @@ function BackupPanel() {
 export function SettingsPage() {
   const { t } = useTranslation()
   const q = useQuery({ queryKey: adminKeys.settings, queryFn: adminApi.settings })
+  // 表单版本号：仅在导入备份后递增，使两个表单重新挂载以读取导入后的设置；
+  // 单独保存某个表单时不递增，从而不会重置另一个表单里未保存的编辑
+  const [formVersion, setFormVersion] = useState(0)
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-lg font-semibold">{t('settings.title')}</h1>
       <Card title={t('settings.site')}>
         {q.data ? (
-          <SiteSettingsForm key={JSON.stringify(q.data)} initial={q.data} />
+          <SiteSettingsForm key={formVersion} initial={q.data} />
         ) : q.error ? (
           <p className="text-sm text-bad">{errorMessage(q.error)}</p>
         ) : (
           <Skeleton className="h-48" />
         )}
       </Card>
+      <Card title={t('notify.title')} desc={t('notify.desc')}>
+        {q.data ? <NotifySettingsForm key={formVersion} initial={q.data} /> : <Skeleton className="h-64" />}
+      </Card>
       <Card title={t('settings.password')}>
         <PasswordForm />
       </Card>
       <Card title={t('settings.backup')} desc={t('settings.backupDesc')}>
-        <BackupPanel />
+        <BackupPanel onImported={() => setFormVersion((v) => v + 1)} />
       </Card>
     </div>
   )

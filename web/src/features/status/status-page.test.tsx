@@ -78,4 +78,36 @@ describe('StatusPage', () => {
     renderWithProviders(<StatusPage />)
     expect(await screen.findByText('还没有服务器')).toBeInTheDocument()
   })
+
+  it('显示公告，只把网址变成链接，HTML 按文本显示', async () => {
+    mockFetch({
+      'GET /api/public/site': { ...SITE, announcement: '维护中 https://status.example.com/x\n<img src=x onerror=alert(1)>' },
+      'GET /api/public/servers': [makeServer()],
+    })
+    renderWithProviders(<StatusPage />)
+    const link = await screen.findByRole('link', { name: 'https://status.example.com/x' })
+    expect(link).toHaveAttribute('href', 'https://status.example.com/x')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.getByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+  })
+
+  it('卡片视图可排序，排序在视图间共享并记住', async () => {
+    localStorage.removeItem('sss.sort')
+    mockFetch({
+      'GET /api/public/site': SITE,
+      'GET /api/public/servers': [makeServer({ id: 'a', name: 'alpha', uptime_24h: 90 }), makeServer({ id: 'b', name: 'beta', uptime_24h: 99.9 })],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<StatusPage />)
+    await screen.findByText('alpha')
+    expect(screen.getByText('在线率 90.0%')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: '排序' }))
+    await user.click(await screen.findByRole('option', { name: '在线率' }))
+    const names = () => screen.getAllByText(/^(alpha|beta)$/).map((el) => el.textContent)
+    expect(names()).toEqual(['beta', 'alpha'])
+    expect(JSON.parse(localStorage.getItem('sss.sort') ?? 'null')).toEqual({ key: 'availability', desc: true })
+    await user.click(screen.getByRole('radio', { name: '列表视图' }))
+    expect(names()).toEqual(['beta', 'alpha'])
+  })
 })

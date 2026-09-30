@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next'
 
 import { useLang } from '@/i18n/use-lang'
-import { formatDuration } from '@/lib/format'
-import { expiryLevel } from '@/lib/server'
+import { formatAgo, formatAvailability, formatDateTime, formatDuration } from '@/lib/format'
+import { availabilityLevel, expiryLevel } from '@/lib/server'
 import type { ServerView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -39,5 +39,29 @@ export function ExpiryText({ days }: { days: number | null }) {
     <span className={cn(level === 'warn' && 'text-warn', level === 'bad' && 'text-bad')}>
       {days <= 0 ? t('expire.expired') : t('expire.days', { count: days })}
     </span>
+  )
+}
+
+/** AvailabilityText 24 小时在线率；无数据时不显示 */
+export function AvailabilityText({ value, label }: { value: number | null | undefined; label?: string }) {
+  if (value == null) return null
+  const level = availabilityLevel(value)
+  return (
+    <span className={cn('tabular', level === 'warn' && 'text-warn', level === 'bad' && 'text-bad')}>
+      {label ? `${label} ` : ''}
+      {formatAvailability(value)}
+    </span>
+  )
+}
+
+/** LastReport 最后上报的相对时间，悬停显示具体时间；从未上报时显示「尚未上报」 */
+export function LastReport({ ts, now }: { ts: number; now: number }) {
+  const { t } = useTranslation()
+  const lang = useLang()
+  if (!ts) return <span>{t('status.neverSeen')}</span>
+  return (
+    <time dateTime={new Date(ts * 1000).toISOString()} title={formatDateTime(ts, lang)}>
+      {formatAgo(ts, now, lang)}
+    </time>
   )
 }

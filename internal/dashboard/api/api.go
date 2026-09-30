@@ -17,6 +17,7 @@ import (
 	"github.com/ruanun/simple-server-status/internal/dashboard/auth"
 	"github.com/ruanun/simple-server-status/internal/dashboard/history"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
+	"github.com/ruanun/simple-server-status/internal/dashboard/notify"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 	"github.com/ruanun/simple-server-status/internal/dashboard/traffic"
 )
@@ -33,6 +34,8 @@ type Deps struct {
 	Now     func() time.Time
 	// Version Dashboard 版本；为正式发布版本时，安装命令锁定同版本的安装脚本与 Agent
 	Version string
+	// NotifyOptions 通知发送选项（零值使用默认值；测试可替换）
+	NotifyOptions notify.Options
 }
 
 // API HTTP 接口集合，缓存服务器列表与设置（修改后立即刷新）
@@ -46,15 +49,21 @@ type API struct {
 	agents   *agentRegistry
 	bc       *broadcaster
 	conns    connTracker
+	notifier *notify.Notifier
+
+	upMu        sync.RWMutex
+	uptimeCache map[string]*float64 // 24 小时在线率，每分钟刷新
 }
 
 // New 创建 API 并加载缓存
 func New(ctx context.Context, d Deps) (*API, error) {
 	a := &API{Deps: d, agents: newAgentRegistry()}
 	a.bc = newBroadcaster(a)
+	a.notifier = notify.NewNotifier(a, d.Hub, d.Traffic, d.Store, notify.NewSender(d.NotifyOptions, d.Log), d.NotifyOptions, d.Now, d.Log)
 	if err := a.reload(ctx); err != nil {
 		return nil, err
 	}
+	a.refreshUptime(ctx)
 	return a, nil
 }
 
@@ -78,6 +87,27 @@ func (a *API) reload(ctx context.Context) error {
 	a.list, a.byID, a.settings = list, byID, st
 	a.mu.Unlock()
 	return nil
+}
+
+// updateCached 数据库写入成功后就地更新缓存中的单台服务器，避免整表 reload；
+// 持有 reloadMu，防止与进行中的 reload 交错时被其旧快照覆盖
+func (a *API) updateCached(id string, fn func(*store.Server)) {
+	a.reloadMu.Lock()
+	defer a.reloadMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s, ok := a.byID[id]
+	if !ok {
+		return
+	}
+	fn(&s)
+	a.byID[id] = s
+	for i := range a.list {
+		if a.list[i].ID == id {
+			a.list[i] = s
+			break
+		}
+	}
 }
 
 func (a *API) server(id string) (store.Server, bool) {

@@ -140,9 +140,7 @@ func (a *API) agentWS(c *gin.Context) {
 		_ = conn.CloseNow()
 		sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer scancel()
-		if err := a.Store.SetLastSeen(sctx, id, a.Now().Unix()); err != nil && !errors.Is(err, store.ErrNotFound) {
-			a.Log.Warn("记录最后在线时间失败", "id", id, "err", err)
-		}
+		a.saveLastSeen(sctx, id, a.Now().Unix())
 		if err := a.Traffic.Flush(sctx); err != nil {
 			a.Log.Warn("保存流量数据失败", "err", err)
 		}
@@ -234,6 +232,11 @@ func (a *API) handleHello(ctx context.Context, id, ip string, h proto.Hello) {
 	a.Hub.SetStatic(id, h)
 	if err := a.Store.SetStaticInfo(ctx, id, ip, h); err != nil {
 		a.Log.Warn("保存静态信息失败", "id", id, "err", err)
+	} else {
+		a.updateCached(id, func(s *store.Server) {
+			s.StaticInfo = &h
+			s.LastIP = ip
+		})
 	}
 	a.pushConfig(id)
 }

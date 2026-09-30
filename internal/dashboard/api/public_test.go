@@ -295,3 +295,70 @@ func TestPublicViewHidesFilterID(t *testing.T) {
 		t.Fatalf("公开响应应包含指标: %s", body)
 	}
 }
+
+func TestPublicStats(t *testing.T) {
+	e := newTestEnv(t) // 时钟为 2026-03-15 12:00 UTC
+	s := e.addServer(store.Server{Name: "a", TrafficResetDay: 1})
+	hidden := e.addServer(store.Server{Name: "h", Hidden: true})
+	ctx := context.Background()
+	for _, v := range []uint64{100, 400} { // 3/15：+300
+		if err := e.api.Traffic.Add(ctx, s.ID, 1, "", v, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, body := e.do("GET", "/api/public/servers/"+s.ID+"/stats", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	got := decodeData[struct {
+		Uptime24h   *float64             `json:"uptime_24h"`
+		Uptime7d    *float64             `json:"uptime_7d"`
+		PeriodStart string               `json:"period_start"`
+		PeriodEnd   string               `json:"period_end"`
+		Daily       []store.DailyTraffic `json:"daily"`
+	}](t, body)
+	if got.PeriodStart != "2026-03-01" || got.PeriodEnd != "2026-03-31" || len(got.Daily) != 15 {
+		t.Fatalf("周期或天数错误 %+v", got)
+	}
+	if last := got.Daily[14]; last.Day != "2026-03-15" || last.In != 300 || last.Out != 300 || got.Daily[0].In != 0 {
+		t.Fatalf("每日流量错误 %+v", got.Daily)
+	}
+	if code, _ := e.do("GET", "/api/public/servers/"+hidden.ID+"/stats", "", nil); code != http.StatusNotFound {
+		t.Fatalf("隐藏服务器未登录应 404，实际 %d", code)
+	}
+	if code, _ := e.do("GET", "/api/public/servers/"+hidden.ID+"/stats", e.adminToken(), nil); code != http.StatusOK {
+		t.Fatalf("登录后应可见，实际 %d", code)
+	}
+}
+
+func TestPublicServersIncludeUptime(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	now := e.clock.Now()
+	if err := e.st.UpsertServers(ctx, []store.Server{{ID: "u1", Name: "u", Secret: "sec", CreatedAt: now.Add(-48 * time.Hour).Unix()}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.api.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var rows []store.MetricRow
+	start := now.Add(-24 * time.Hour).Unix()
+	for i := int64(0); i < 1440; i += 2 { // 每 2 分钟一个点：在线率 50%
+		rows = append(rows, store.MetricRow{ServerID: "u1", Point: metric.Point{TS: start + i*60}})
+	}
+	if err := e.st.InsertMetrics(ctx, store.Metrics1m, rows); err != nil {
+		t.Fatal(err)
+	}
+	e.api.refreshUptime(ctx)
+	code, body := e.do("GET", "/api/public/servers", "", nil)
+	if code != http.StatusOK {
+		t.Fatal(code)
+	}
+	list := decodeData[[]struct {
+		ID        string   `json:"id"`
+		Uptime24h *float64 `json:"uptime_24h"`
+	}](t, body)
+	if len(list) != 1 || list[0].Uptime24h == nil || *list[0].Uptime24h != 50 {
+		t.Fatalf("在线率错误 %+v", list)
+	}
+}

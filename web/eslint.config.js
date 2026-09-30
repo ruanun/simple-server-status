@@ -18,6 +18,11 @@ export default tseslint.config(
     },
   },
   {
+    // 测试文件与测试工具不参与开发时的快速刷新
+    files: ['src/test/**/*.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['e2e/**/*.ts'],
     languageOptions: { globals: { ...globals.node } },
   },

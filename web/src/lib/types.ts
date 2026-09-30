@@ -74,6 +74,7 @@ export interface ServerView {
   price?: number | null
   currency?: string
   billing_cycle?: BillingCycle
+  uptime_24h: number | null
 }
 
 export interface Point {
@@ -93,6 +94,30 @@ export const RANGES: Range[] = ['realtime', '1h', '6h', '24h', '7d']
 export interface Site {
   site_title: string
   show_price: boolean
+  announcement: string
+}
+
+export interface NotifySettings {
+  webhook_url: string
+  telegram_token: string
+  telegram_chat_id: string
+  lang: 'zh-CN' | 'en-US'
+  offline_enabled: boolean
+  offline_minutes: number
+  load_enabled: boolean
+  load_cpu: number
+  load_mem: number
+  load_disk: number
+  load_minutes: number
+  expire_enabled: boolean
+  expire_days: number
+  traffic_enabled: boolean
+  traffic_percent: number
+}
+
+export interface NotifyTestResult {
+  webhook: string | null
+  telegram: string | null
 }
 
 export interface Settings {
@@ -100,6 +125,8 @@ export interface Settings {
   show_price: boolean
   default_report_interval: number
   install_script_base: string
+  announcement: string
+  notify: NotifySettings
 }
 
 export interface ServerInput {
@@ -118,6 +145,22 @@ export interface ServerInput {
   nic_include: string[]
   nic_exclude: string[]
   mount_exclude: string[]
+  note: string
+  notify_muted: boolean
+}
+
+export interface DailyTraffic {
+  day: string
+  in: number
+  out: number
+}
+
+export interface ServerStats {
+  uptime_24h: number | null
+  uptime_7d: number | null
+  period_start: string
+  period_end: string
+  daily: DailyTraffic[]
 }
 
 export interface AdminServer extends ServerInput {
@@ -130,4 +173,25 @@ export interface AdminServer extends ServerInput {
   created_at: number
   updated_at: number
   online: boolean
+  agent_version: string
+  outdated: boolean
+  uptime_24h: number | null
+}
+
+export interface CostGroup {
+  currency: string
+  amount: number
+  servers: number
+}
+
+export interface ExpiringServer {
+  id: string
+  name: string
+  expire_at: number
+  days: number
+}
+
+export interface Overview {
+  monthly_cost: CostGroup[]
+  expiring: ExpiringServer[]
 }

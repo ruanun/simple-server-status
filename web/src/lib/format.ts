@@ -59,6 +59,11 @@ export function formatDate(ts: number, lang: Lang): string {
   return new Date(ts * 1000).toLocaleDateString(lang)
 }
 
+/** formatDateTime 本地日期与时间，如 "2026/9/29 17:05:09" */
+export function formatDateTime(ts: number, lang: Lang): string {
+  return new Date(ts * 1000).toLocaleString(lang)
+}
+
 const DAY_TIME: Intl.DateTimeFormatOptions = { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }
 
 /** formatChartTick 图表横轴刻度：1h/6h 及实时显示时:分，24h 显示月/日 时:分，7d 显示月/日 */
@@ -72,4 +77,15 @@ export function formatChartTick(ts: number, range: Range, lang: Lang): string {
 /** formatChartLabel 图表提示框标签，始终带日期与时间 */
 export function formatChartLabel(ts: number, lang: Lang): string {
   return new Date(ts * 1000).toLocaleString(lang, DAY_TIME)
+}
+
+/** formatAvailability 在线率：保留 1 位小数，100% 不带小数 */
+export function formatAvailability(v: number): string {
+  return v >= 100 ? '100%' : `${v.toFixed(1)}%`
+}
+
+/** formatMonthDay "2026-09-01" → "9/1" */
+export function formatMonthDay(day: string): string {
+  const [, m, d] = day.split('-')
+  return `${Number(m)}/${Number(d)}`
 }

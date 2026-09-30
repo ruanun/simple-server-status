@@ -289,7 +289,7 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-lg font-semibold">{t('settings.title')}</h1>
       <Tabs value={tab} onValueChange={changeTab}>
-        <TabsList className="max-w-full overflow-x-auto">
+        <TabsList>
           {TABS.map((k) => (
             <TabsTrigger key={k} value={k}>
               {labels[k]}

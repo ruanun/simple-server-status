@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import {
@@ -18,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage, tokenStore } from '@/lib/api'
@@ -248,33 +250,79 @@ function BackupPanel({ onImported }: { onImported: () => void }) {
   )
 }
 
+// 设置页分区；当前分区保存在网址 ?tab= 中，便于刷新、收藏和直接跳转
+const TABS = ['site', 'notify', 'account', 'backup'] as const
+type Tab = (typeof TABS)[number]
+
+function isTab(v: string | null): v is Tab {
+  return (TABS as readonly (string | null)[]).includes(v)
+}
+
 export function SettingsPage() {
   const { t } = useTranslation()
   const q = useQuery({ queryKey: adminKeys.settings, queryFn: adminApi.settings })
   // 表单版本号：仅在导入备份后递增，使两个表单重新挂载以读取导入后的设置；
   // 单独保存某个表单时不递增，从而不会重置另一个表单里未保存的编辑
   const [formVersion, setFormVersion] = useState(0)
+  const [params, setParams] = useSearchParams()
+  const raw = params.get('tab')
+  const tab: Tab = isTab(raw) ? raw : 'site'
+  const changeTab = (v: string) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (v === 'site') next.delete('tab')
+        else next.set('tab', v)
+        return next
+      },
+      { replace: true },
+    )
+  const labels: Record<Tab, string> = {
+    site: t('settings.site'),
+    notify: t('notify.title'),
+    account: t('settings.account'),
+    backup: t('settings.backupTab'),
+  }
+  // 各分区始终挂载、仅隐藏非当前分区，切换标签页时不会丢失未保存的编辑
+  const pane = 'space-y-6 data-[state=inactive]:hidden'
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-lg font-semibold">{t('settings.title')}</h1>
-      <Card title={t('settings.site')}>
-        {q.data ? (
-          <SiteSettingsForm key={formVersion} initial={q.data} />
-        ) : q.error ? (
-          <p className="text-sm text-bad">{errorMessage(q.error)}</p>
-        ) : (
-          <Skeleton className="h-48" />
-        )}
-      </Card>
-      <Card title={t('notify.title')} desc={t('notify.desc')}>
-        {q.data ? <NotifySettingsForm key={formVersion} initial={q.data} /> : <Skeleton className="h-64" />}
-      </Card>
-      <Card title={t('settings.password')}>
-        <PasswordForm />
-      </Card>
-      <Card title={t('settings.backup')} desc={t('settings.backupDesc')}>
-        <BackupPanel onImported={() => setFormVersion((v) => v + 1)} />
-      </Card>
+      <Tabs value={tab} onValueChange={changeTab}>
+        <TabsList className="max-w-full overflow-x-auto">
+          {TABS.map((k) => (
+            <TabsTrigger key={k} value={k}>
+              {labels[k]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="site" forceMount className={pane}>
+          <Card title={t('settings.site')}>
+            {q.data ? (
+              <SiteSettingsForm key={formVersion} initial={q.data} />
+            ) : q.error ? (
+              <p className="text-sm text-bad">{errorMessage(q.error)}</p>
+            ) : (
+              <Skeleton className="h-48" />
+            )}
+          </Card>
+        </TabsContent>
+        <TabsContent value="notify" forceMount className={pane}>
+          <Card title={t('notify.title')} desc={t('notify.desc')}>
+            {q.data ? <NotifySettingsForm key={formVersion} initial={q.data} /> : <Skeleton className="h-64" />}
+          </Card>
+        </TabsContent>
+        <TabsContent value="account" forceMount className={pane}>
+          <Card title={t('settings.password')}>
+            <PasswordForm />
+          </Card>
+        </TabsContent>
+        <TabsContent value="backup" forceMount className={pane}>
+          <Card title={t('settings.backup')} desc={t('settings.backupDesc')}>
+            <BackupPanel onImported={() => setFormVersion((v) => v + 1)} />
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

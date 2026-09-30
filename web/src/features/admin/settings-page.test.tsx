@@ -285,4 +285,37 @@ describe('SettingsPage', () => {
     const form = oldPw.closest('form') as HTMLFormElement
     await waitFor(() => expect(form.querySelector('input[autocomplete="username"]')).toHaveValue('admin'))
   })
+
+  it('按标签页分区显示，默认站点，当前标签写入网址', async () => {
+    mockFetch({ 'GET /api/admin/settings': SETTINGS })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings', path: '/admin/settings' })
+    expect(await screen.findByRole('tab', { name: '站点' })).toHaveAttribute('aria-selected', 'true')
+    for (const name of ['通知', '账号', '备份']) {
+      expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'false')
+    }
+    await user.click(screen.getByRole('tab', { name: '备份' }))
+    expect(screen.getByRole('tab', { name: '备份' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/settings?tab=backup')
+  })
+
+  it('网址中的标签直接打开对应分区，无效值回到站点', async () => {
+    mockFetch({ 'GET /api/admin/settings': SETTINGS })
+    const { unmount } = renderWithProviders(<SettingsPage />, { route: '/admin/settings?tab=notify', path: '/admin/settings' })
+    expect(await screen.findByRole('tab', { name: '通知' })).toHaveAttribute('aria-selected', 'true')
+    unmount()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings?tab=xyz', path: '/admin/settings' })
+    expect(await screen.findByRole('tab', { name: '站点' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('切换标签页不丢失其他分区未保存的编辑', async () => {
+    mockFetch({ 'GET /api/admin/settings': SETTINGS })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings', path: '/admin/settings' })
+    await user.click(await screen.findByRole('tab', { name: '通知' }))
+    await user.type(screen.getByLabelText('Chat ID'), '42')
+    await user.click(screen.getByRole('tab', { name: '站点' }))
+    await user.click(screen.getByRole('tab', { name: '通知' }))
+    expect(screen.getByLabelText('Chat ID')).toHaveValue('42')
+  })
 })

@@ -158,6 +158,8 @@ export const zhCN = {
   settings: {
     title: '设置',
     site: '站点',
+    account: '账号',
+    backupTab: '备份',
     siteTitle: '站点标题',
     showPrice: '公开显示价格',
     defaultInterval: '默认上报间隔（秒）',

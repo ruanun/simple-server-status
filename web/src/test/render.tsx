@@ -7,7 +7,12 @@ import { ThemeProvider } from '@/components/theme'
 
 function LocationProbe() {
   const location = useLocation()
-  return <div data-testid="location">{location.pathname}</div>
+  return (
+    <div data-testid="location">
+      {location.pathname}
+      {location.search}
+    </div>
+  )
 }
 
 /** renderWithProviders 在主题、Query 与内存路由中渲染组件；path 为该组件挂载的路由模式 */

@@ -168,6 +168,8 @@ export const enUS: EnDict = {
   settings: {
     title: 'Settings',
     site: 'Site',
+    account: 'Account',
+    backupTab: 'Backup',
     siteTitle: 'Site title',
     showPrice: 'Show prices publicly',
     defaultInterval: 'Default report interval (s)',

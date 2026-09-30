@@ -284,9 +284,7 @@ Dashboard 服务名为 `sss-dashboard`，Agent 为 `sss-agent`，下面以 Agent
 | 查看状态 | `systemctl status sss-agent` |
 | 启动 / 停止 / 重启 | `sudo systemctl start sss-agent` / `sudo systemctl stop sss-agent` / `sudo systemctl restart sss-agent` |
 | 开机自启 / 取消自启 | `sudo systemctl enable sss-agent` / `sudo systemctl disable sss-agent` |
-| 实时日志 | `journalctl -u sss-agent -f` |
-| 最近日志 | `journalctl -u sss-agent -n 100 --no-pager` |
-| 本次开机以来的日志 | `journalctl -u sss-agent -b` |
+| 查看日志 | `journalctl -u sss-agent -f`，更多见 [查看日志](#查看日志) |
 
 两个服务都设置了 `Restart=on-failure`：异常退出后 5 秒自动重启；正常退出（如在后台删除了服务器，Agent 收到通知后退出）不会重启，此时 `systemctl status` 显示 `inactive (dead)`。
 
@@ -308,6 +306,38 @@ Dashboard 服务名为 `sss-dashboard`，Agent 为 `sss-agent`，下面以 Agent
   覆盖配置保存在 `/etc/systemd/system/sss-dashboard.service.d/override.conf`，升级时替换程序文件不会影响它。启动参数与对应的环境变量见 [配置](configuration.md#dashboard)。
 
 服务文件启用了 `ProtectSystem=strict`，文件系统除指定目录外只读。Dashboard 如需 `--log-file`，请写到数据目录 `/var/lib/sss` 下；Agent 的 `log_file` 请写到 `/var/log/sss-agent/` 下。
+
+## 查看日志
+
+Dashboard 与 Agent 默认只输出到标准输出，不写文件，日志位置取决于部署方式。
+
+**Dashboard**
+
+| 部署方式 | 命令 |
+|---|---|
+| Docker | `docker logs -f sss-dashboard`（最近 100 行：`docker logs --tail 100 sss-dashboard`） |
+| Docker Compose | `docker compose -f deployments/docker/docker-compose.yml logs -f` |
+| systemd | `journalctl -u sss-dashboard -f`（最近 100 行：`journalctl -u sss-dashboard -n 100 --no-pager`） |
+| 前台运行 | 直接输出在终端 |
+
+首次启动生成的 admin 密码也在日志中：`docker logs sss-dashboard 2>&1 | grep password` 或 `journalctl -u sss-dashboard | grep password`。
+
+需要日志文件时设置 `--log-file`（或 `SSS_LOG_FILE`），设置后同时输出到标准输出与文件，文件按 10 MB 轮转，保留 5 份、30 天：
+
+- systemd：路径放在 `/var/lib/sss` 下，用 `sudo systemctl edit sss-dashboard` 写入 `Environment=SSS_LOG_FILE=/var/lib/sss/dashboard.log` 后重启。
+- Docker：路径放在 `/app/data` 下（如 `-e SSS_LOG_FILE=/app/data/dashboard.log`），日志随数据卷保存。
+
+**Agent**
+
+| 部署方式 | 查看方式 |
+|---|---|
+| Linux（一键脚本 / systemd） | `journalctl -u sss-agent -f`（最近 100 行：`journalctl -u sss-agent -n 100 --no-pager`，本次开机以来：`journalctl -u sss-agent -b`） |
+| Windows（一键脚本） | `Get-Content "$env:ProgramFiles\sss-agent\logs\agent.log" -Tail 50 -Wait`；读取配置失败等启动前的错误在事件查看器「Windows 日志 → 应用程序」，来源 `sss-agent` |
+| 前台运行 | 直接输出在终端 |
+
+Linux 需要日志文件时，在 `/etc/sss/sss-agent.yaml` 中设置 `log_file: /var/log/sss-agent/agent.log` 后重启服务（systemd 下只有该目录可写）。
+
+排查问题时可把日志级别调为 `debug`：Dashboard 用 `--log-level debug`（或 `SSS_LOG_LEVEL=debug`），Agent 在配置中设置 `log_level: debug`，改完重启。Agent 日志中出现 401 表示 ID 或密钥不对（例如密钥已在后台重置），重新执行后台的安装命令即可。
 
 ## 升级与备份
 

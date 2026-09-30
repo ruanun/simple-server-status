@@ -113,6 +113,7 @@ function PasswordForm() {
   const [confirmPw, setConfirmPw] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const me = useQuery({ queryKey: adminKeys.me, queryFn: adminApi.me })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -136,6 +137,8 @@ function PasswordForm() {
 
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-4">
+      {/* 隐藏的用户名：让密码管理器知道修改的是哪个账号，从而正确更新已保存的密码 */}
+      <input type="text" name="username" autoComplete="username" value={me.data?.username ?? ''} readOnly hidden />
       <div className="space-y-1.5">
         <Label htmlFor="old_password">{t('settings.oldPassword')}</Label>
         <Input id="old_password" type="password" autoComplete="current-password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} />

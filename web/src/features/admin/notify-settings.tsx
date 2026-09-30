@@ -12,6 +12,9 @@ import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
 import type { NotifySettings, NotifyTestResult, Settings } from '@/lib/types'
 
+// 渠道配置不是登录凭据：阻止浏览器及 1Password、LastPass、Bitwarden 把已保存的后台账号密码填入
+const NO_AUTOFILL = { 'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '' }
+
 type NumKey = 'offline_minutes' | 'load_cpu' | 'load_mem' | 'load_disk' | 'load_minutes' | 'expire_days' | 'traffic_percent'
 type BoolKey = 'offline_enabled' | 'load_enabled' | 'expire_enabled' | 'traffic_enabled'
 
@@ -92,7 +95,15 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
     <form onSubmit={(e) => void save(e)} className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="webhook_url">{t('notify.webhook')}</Label>
-        <Input id="webhook_url" placeholder="https://" value={n.webhook_url} onChange={(e) => setN({ ...n, webhook_url: e.target.value })} />
+        <Input
+          id="webhook_url"
+          name="notify_webhook_url"
+          autoComplete="off"
+          {...NO_AUTOFILL}
+          placeholder="https://"
+          value={n.webhook_url}
+          onChange={(e) => setN({ ...n, webhook_url: e.target.value })}
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -100,8 +111,11 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
           <div className="flex gap-2">
             <Input
               id="telegram_token"
+              name="notify_telegram_token"
               type={showToken ? 'text' : 'password'}
-              autoComplete="off"
+              // 密码框上 off 会被 Chrome 忽略，new-password 才能阻止填入已保存的密码
+              autoComplete="new-password"
+              {...NO_AUTOFILL}
               value={n.telegram_token}
               onChange={(e) => setN({ ...n, telegram_token: e.target.value })}
             />
@@ -112,7 +126,14 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="telegram_chat_id">{t('notify.chatId')}</Label>
-          <Input id="telegram_chat_id" value={n.telegram_chat_id} onChange={(e) => setN({ ...n, telegram_chat_id: e.target.value })} />
+          <Input
+            id="telegram_chat_id"
+            name="notify_telegram_chat_id"
+            autoComplete="off"
+            {...NO_AUTOFILL}
+            value={n.telegram_chat_id}
+            onChange={(e) => setN({ ...n, telegram_chat_id: e.target.value })}
+          />
         </div>
       </div>
       <div className="space-y-1.5">

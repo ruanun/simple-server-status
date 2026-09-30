@@ -261,4 +261,28 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Webhook：发送成功')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '发送测试' })).toBeEnabled()
   })
+
+  it('通知渠道输入框不被浏览器与密码管理器自动填充', async () => {
+    mockFetch({ 'GET /api/admin/settings': SETTINGS })
+    renderWithProviders(<SettingsPage />)
+    const token = await screen.findByLabelText('Bot Token')
+    expect(token).toHaveAttribute('autocomplete', 'new-password')
+    for (const label of ['Webhook 地址', 'Chat ID']) {
+      expect(screen.getByLabelText(label)).toHaveAttribute('autocomplete', 'off')
+    }
+    for (const el of [token, screen.getByLabelText('Webhook 地址'), screen.getByLabelText('Chat ID')]) {
+      expect(el).toHaveAttribute('name')
+      expect(el).toHaveAttribute('data-1p-ignore')
+      expect(el).toHaveAttribute('data-lpignore', 'true')
+      expect(el).toHaveAttribute('data-bwignore')
+    }
+  })
+
+  it('修改密码表单带有隐藏的用户名，便于密码管理器更新对应账号', async () => {
+    mockFetch({ 'GET /api/admin/settings': SETTINGS, 'GET /api/auth/me': { username: 'admin' } })
+    renderWithProviders(<SettingsPage />)
+    const oldPw = await screen.findByLabelText('原密码')
+    const form = oldPw.closest('form') as HTMLFormElement
+    await waitFor(() => expect(form.querySelector('input[autocomplete="username"]')).toHaveValue('admin'))
+  })
 })

@@ -44,7 +44,7 @@ docker logs sss-dashboard 2>&1 | grep password   # 首次生成的 admin 密码
 ## 文档
 
 - [快速开始](docs/getting-started.md)：Docker 部署、首次登录、接入第一台服务器、重置密码
-- [部署](docs/deployment.md)：Docker / systemd、反向代理、Agent 安装与卸载、升级备份、从源码构建
+- [部署](docs/deployment.md)：Docker / systemd、反向代理、Agent 安装与卸载、服务管理、升级备份、从源码构建
 - [配置](docs/configuration.md)：Dashboard 与 Agent 参数、后台设置、服务器字段
 - [API](docs/api.md)：HTTP 接口、浏览器与 Agent 的 WebSocket 协议
 

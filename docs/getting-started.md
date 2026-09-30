@@ -54,7 +54,7 @@ docker run -d --name sss-dashboard --restart unless-stopped \
 
 如果一直显示离线，在目标机器上查看 Agent 日志：
 
-- Linux：`journalctl -u sss-agent -f`
+- Linux：`journalctl -u sss-agent -f`（启停、重启等命令见 [服务管理](deployment.md#服务管理systemd)）
 - Windows：`Get-Content "$env:ProgramFiles\sss-agent\logs\agent.log" -Tail 50`
 
 日志中出现 401 表示 ID 或密钥不对（例如密钥已在后台重置），请在后台重新复制安装命令执行。

@@ -247,6 +247,68 @@ sss-agent --dashboard https://status.example.com --id '<ID>' --secret '<密钥>'
 
 归档中附带配置模板 `configs/sss-agent.yaml.example`，所有配置项见 [配置](configuration.md#agent)。
 
+有 systemd 但不方便用一键脚本（如离线环境）时，可以照脚本的做法写入 `/etc/systemd/system/sss-agent.service`，之后按 [服务管理](#服务管理systemd) 操作：
+
+```ini
+[Unit]
+Description=Simple Server Status Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sss-agent --config /etc/sss/sss-agent.yaml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+LogsDirectory=sss-agent
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now sss-agent
+```
+
+## 服务管理（systemd）
+
+Dashboard 服务名为 `sss-dashboard`，Agent 为 `sss-agent`，下面以 Agent 为例，Dashboard 把服务名替换即可。
+
+| 操作 | 命令 |
+|---|---|
+| 查看状态 | `systemctl status sss-agent` |
+| 启动 / 停止 / 重启 | `sudo systemctl start sss-agent` / `sudo systemctl stop sss-agent` / `sudo systemctl restart sss-agent` |
+| 开机自启 / 取消自启 | `sudo systemctl enable sss-agent` / `sudo systemctl disable sss-agent` |
+| 实时日志 | `journalctl -u sss-agent -f` |
+| 最近日志 | `journalctl -u sss-agent -n 100 --no-pager` |
+| 本次开机以来的日志 | `journalctl -u sss-agent -b` |
+
+两个服务都设置了 `Restart=on-failure`：异常退出后 5 秒自动重启；正常退出（如在后台删除了服务器，Agent 收到通知后退出）不会重启，此时 `systemctl status` 显示 `inactive (dead)`。
+
+**修改配置后需要重启才生效：**
+
+- Agent：编辑 `/etc/sss/sss-agent.yaml` 后执行 `sudo systemctl restart sss-agent`。采集间隔、网卡与挂载点过滤等参数由 Dashboard 下发，在后台修改即可，无需改配置或重启。
+- Dashboard：不要直接改服务文件，用 `sudo systemctl edit sss-dashboard` 写入覆盖配置，保存后重启：
+
+  ```ini
+  [Service]
+  Environment=SSS_LISTEN=127.0.0.1:8900
+  Environment=SSS_TRUSTED_PROXIES=127.0.0.1
+  ```
+
+  ```bash
+  sudo systemctl restart sss-dashboard
+  ```
+
+  覆盖配置保存在 `/etc/systemd/system/sss-dashboard.service.d/override.conf`，升级时替换程序文件不会影响它。启动参数与对应的环境变量见 [配置](configuration.md#dashboard)。
+
+服务文件启用了 `ProtectSystem=strict`，文件系统除指定目录外只读。Dashboard 如需 `--log-file`，请写到数据目录 `/var/lib/sss` 下；Agent 的 `log_file` 请写到 `/var/log/sss-agent/` 下。
+
 ## 升级与备份
 
 **升级**

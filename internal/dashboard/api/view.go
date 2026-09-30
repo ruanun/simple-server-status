@@ -30,6 +30,8 @@ type ServerView struct {
 	Online       bool          `json:"online"`
 	LastSeen     int64         `json:"last_seen"`
 	Uptime24h    *float64      `json:"uptime_24h"`
+	IPv4         bool          `json:"ipv4"`
+	IPv6         bool          `json:"ipv6"`
 	Static       *proto.Hello  `json:"static"`
 	Metrics      *proto.Report `json:"metrics"`
 	Traffic      TrafficView   `json:"traffic"`
@@ -44,12 +46,17 @@ func (a *API) view(ctx context.Context, srv store.Server, showPrice bool) Server
 	live := a.Hub.Get(srv.ID)
 	v := ServerView{
 		ID: srv.ID, Name: srv.Name, Group: srv.Group, Country: srv.Country, Sort: srv.Sort, Hidden: srv.Hidden,
-		Online: live.Online, LastSeen: srv.LastSeen, Uptime24h: a.cachedUptime(srv.ID), Static: srv.StaticInfo,
+		Online: live.Online, LastSeen: srv.LastSeen, Uptime24h: a.cachedUptime(srv.ID),
 		Metrics: publicMetrics(live.Report), ExpireAt: srv.ExpireAt,
 	}
+	raw := srv.StaticInfo
 	if live.Static != nil {
-		v.Static = live.Static
+		raw = live.Static
 	}
+	if raw != nil {
+		v.IPv4, v.IPv6 = raw.IPv4 != "", raw.IPv6 != ""
+	}
+	v.Static = publicStatic(raw)
 	if live.LastReport > 0 {
 		v.LastSeen = live.LastReport
 	}
@@ -82,6 +89,17 @@ func (a *API) views(ctx context.Context, includeHidden bool) []ServerView {
 }
 
 // publicMetrics 复制上报数据并清空仅供内部统计使用的字段，避免泄露网卡过滤配置
+// publicStatic 复制静态信息并清空 Agent 版本与公网地址：版本号与地址只在后台显示，避免公开暴露可利用的信息
+func publicStatic(h *proto.Hello) *proto.Hello {
+	if h == nil {
+		return nil
+	}
+	c := *h
+	c.AgentVersion = ""
+	c.IPv4, c.IPv6 = "", ""
+	return &c
+}
+
 func publicMetrics(r *proto.Report) *proto.Report {
 	if r == nil {
 		return nil

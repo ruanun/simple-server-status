@@ -6,8 +6,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
 import { SiteHeader } from '@/components/site-header'
-import { LastReport, StatusPill } from '@/components/status-bits'
-import { Badge } from '@/components/ui/badge'
+import { IpBadges, LastReport, StatusPill } from '@/components/status-bits'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -20,6 +19,7 @@ import { useLiveServers } from '@/realtime/use-live-servers'
 
 import { DiskList } from './disk-list'
 import { InfoGrid } from './info-grid'
+import { RecentOutages } from './recent-outages'
 
 const MetricCharts = lazy(() => import('./metric-charts'))
 const DailyTrafficChart = lazy(() => import('./daily-traffic-chart'))
@@ -61,12 +61,8 @@ export function DetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold tracking-tight">{server.name}</h1>
           <Flag code={server.country} />
+          <IpBadges v4={server.ipv4} v6={server.ipv6} />
           <StatusPill server={server} />
-          {server.static?.agent_version && (
-            <Badge variant="outline" className="font-normal">
-              Agent {server.static.agent_version}
-            </Badge>
-          )}
           <span className="text-xs text-muted-foreground tabular">
             {t('detail.lastSeen')} <LastReport ts={server.last_seen} now={now} />
           </span>
@@ -101,6 +97,7 @@ export function DetailPage() {
             <Skeleton className="h-40 w-full" />
           )}
         </section>
+        <RecentOutages serverId={server.id} />
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium">{t('detail.history')}</h2>

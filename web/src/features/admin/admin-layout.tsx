@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, LogOut, Menu, Server, Settings } from 'lucide-react'
+import { ArrowLeft, History, LogOut, Menu, Server, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet } from 'react-router-dom'
@@ -23,6 +23,7 @@ export function AdminLayout() {
 
   const links = [
     { to: '/admin/servers', icon: Server, label: t('nav.servers') },
+    { to: '/admin/events', icon: History, label: t('nav.events') },
     { to: '/admin/settings', icon: Settings, label: t('nav.settings') },
   ]
   // 退出登录：清除 token 并丢弃后台数据与登录态的服务器列表缓存（含隐藏服务器）

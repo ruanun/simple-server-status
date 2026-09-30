@@ -58,6 +58,8 @@ export function makeServer(overrides: Partial<ServerView> = {}): ServerView {
     traffic: { in: 300 * 1024 ** 3, out: 100 * 1024 ** 3, used: 400 * 1024 ** 3, limit: 1024 ** 4, mode: 'sum', reset_day: 1, period: '2026-09-01' },
     expire_at: null,
     uptime_24h: 99.9,
+    ipv4: true,
+    ipv6: false,
     ...overrides,
   }
 }

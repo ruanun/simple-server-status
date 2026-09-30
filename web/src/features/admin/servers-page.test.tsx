@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { AdminServer } from '@/lib/types'
 import { mockFetch } from '@/test/fetch'
-import { makeAdminServer } from '@/test/fixtures'
+import { makeAdminServer, makeHello } from '@/test/fixtures'
 import { renderWithProviders } from '@/test/render'
 
 import { ServersPage } from './servers-page'
@@ -114,5 +114,35 @@ describe('ServersPage', () => {
     await user.keyboard('{Escape}')
     await user.click(within(other).getByRole('button', { name: '操作' }))
     expect(screen.queryByRole('menuitem', { name: '升级 Agent' })).not.toBeInTheDocument()
+  })
+
+  it('IP 列显示 IPv4 与 IPv6，旧版 Agent 回退显示连接来源', async () => {
+    mockFetch({
+      'GET /api/admin/servers': [
+        makeAdminServer({ id: 'a', name: 'a1', last_ip: '10.0.0.1', static_info: makeHello({ ipv4: '203.0.113.7', ipv6: '2001:db8::7' }) }),
+        makeAdminServer({ id: 'b', name: 'b1', last_ip: '10.0.0.2', static_info: makeHello() }),
+      ],
+      'GET /api/admin/overview': { monthly_cost: [], expiring: [] },
+    })
+    renderWithProviders(<ServersPage />, { route: '/admin/servers', path: '/admin/servers' })
+    const rowA = (await screen.findByText('a1')).closest('tr') as HTMLElement
+    expect(within(rowA).getByText('203.0.113.7')).toBeInTheDocument()
+    expect(within(rowA).getByText('2001:db8::7')).toBeInTheDocument()
+    expect(within(rowA).getByTitle('连接来源：10.0.0.1')).toBeInTheDocument()
+    const rowB = screen.getByText('b1').closest('tr') as HTMLElement
+    expect(within(rowB).getByText('10.0.0.2')).toBeInTheDocument()
+  })
+
+  it('行菜单「查看事件」跳转到事件页并带服务器筛选', async () => {
+    mockFetch({
+      'GET /api/admin/servers': [makeAdminServer({ id: 'a', name: 'a1' })],
+      'GET /api/admin/overview': { monthly_cost: [], expiring: [] },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<ServersPage />, { route: '/admin/servers', path: '/admin/servers' })
+    const row = (await screen.findByText('a1')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: '操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '查看事件' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/events?server=')
   })
 })

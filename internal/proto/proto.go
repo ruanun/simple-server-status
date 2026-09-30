@@ -43,6 +43,8 @@ type Hello struct {
 	DiskTotal       uint64 `json:"disk_total"`
 	AgentVersion    string `json:"agent_version"`
 	Country         string `json:"country"`
+	IPv4            string `json:"ipv4,omitempty"`
+	IPv6            string `json:"ipv6,omitempty"`
 }
 
 // Config Dashboard 下发给 Agent 的采集参数

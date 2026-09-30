@@ -51,6 +51,7 @@ type Event struct {
 	Limit      int64       // traffic：配额字节
 	Title      string
 	Message    string
+	Mark       *Mark // 到期 / 流量等一次性提醒：投递成功后需记录的去重键
 }
 
 // Observation 一台服务器当前的观测数据
@@ -80,15 +81,14 @@ type Mark struct {
 	Key  string
 }
 
-// Evaluate 按规则评估一台服务器，更新 st 并返回待发送的事件与需记录的一次性提醒。
+// Evaluate 按规则评估一台服务器，更新 st 并返回待发送的事件（一次性提醒携带 Mark）。
 // baseline 为 true 时（启动后的基线期）离线、高负载只建立状态、不产生事件；到期与流量提醒以 sent 去重，不受 baseline 影响。
 // 静音的服务器按基线方式更新离线、高负载状态（避免取消静音后补发陈旧的通知），且不产生一次性提醒
-func Evaluate(now time.Time, cfg store.NotifySettings, o Observation, st *State, baseline bool, sent func(rule, key string) bool) ([]Event, []Mark) {
+func Evaluate(now time.Time, cfg store.NotifySettings, o Observation, st *State, baseline bool, sent func(rule, key string) bool) []Event {
 	if o.Muted {
 		baseline = true
 	}
 	var events []Event
-	var marks []Mark
 	emit := func(kind string, fill func(e *Event)) {
 		e := Event{Kind: kind, ServerID: o.ID, ServerName: o.Name, Time: now.Unix()}
 		fill(&e)
@@ -133,7 +133,7 @@ func Evaluate(now time.Time, cfg store.NotifySettings, o Observation, st *State,
 	}
 
 	if o.Muted {
-		return events, marks
+		return events
 	}
 
 	// 即将到期：每个到期日只提醒一次；过期超过 expireGraceDays 天的不再提醒（与后台总览一致）
@@ -141,8 +141,10 @@ func Evaluate(now time.Time, cfg store.NotifySettings, o Observation, st *State,
 		days := int(math.Ceil(float64(*o.ExpireAt-now.Unix()) / 86400))
 		key := strconv.FormatInt(*o.ExpireAt, 10)
 		if days <= cfg.ExpireDays && days >= -expireGraceDays && !sent(RuleExpire, key) {
-			marks = append(marks, Mark{Rule: RuleExpire, Key: key})
-			emit(KindExpire, func(e *Event) { e.Days, e.ExpireAt = days, *o.ExpireAt })
+			emit(KindExpire, func(e *Event) {
+				e.Days, e.ExpireAt = days, *o.ExpireAt
+				e.Mark = &Mark{Rule: RuleExpire, Key: key}
+			})
 		}
 	}
 
@@ -150,13 +152,13 @@ func Evaluate(now time.Time, cfg store.NotifySettings, o Observation, st *State,
 	if cfg.TrafficEnabled && o.TrafficLimit != nil && *o.TrafficLimit > 0 {
 		pct := float64(o.TrafficUsed) / float64(*o.TrafficLimit) * 100
 		if pct >= float64(cfg.TrafficPercent) && !sent(RuleTraffic, o.Period) {
-			marks = append(marks, Mark{Rule: RuleTraffic, Key: o.Period})
 			emit(KindTraffic, func(e *Event) {
 				e.Percent, e.Used, e.Limit = math.Round(pct*10)/10, o.TrafficUsed, *o.TrafficLimit
+				e.Mark = &Mark{Rule: RuleTraffic, Key: o.Period}
 			})
 		}
 	}
-	return events, marks
+	return events
 }
 
 // loadOver 计算最近 LoadMinutes 分钟内各项平均值，返回超过阈值的指标；点数不足 2 时 ok 为 false

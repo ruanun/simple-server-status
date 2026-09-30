@@ -70,7 +70,7 @@ func TestClientHandshakeReportAndStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.SetCountry("JP")
+	c.SetNetwork(collect.Network{Country: "JP"})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := c.Run(ctx); !errors.Is(err, ErrStopped) {
@@ -89,6 +89,141 @@ func TestClientHandshakeReportAndStop(t *testing.T) {
 	defer fs.mu.Unlock()
 	if len(fs.filter.NICInclude) != 1 || fs.filter.NICInclude[0] != "eth" {
 		t.Errorf("未应用下发的过滤规则: %+v", fs.filter)
+	}
+}
+
+// TestSetNetworkResendsHello 验证 SetNetwork 在取值变化时让当前连接重新发送 hello，值不变时不重发
+func TestSetNetworkResendsHello(t *testing.T) {
+	helloCh := make(chan proto.Hello, 4)
+	reportCh := make(chan proto.Report, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		ctx := r.Context()
+		for {
+			_, b, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			env, err := proto.Decode(b)
+			if err != nil {
+				continue
+			}
+			switch env.Type {
+			case proto.TypeHello:
+				var h proto.Hello
+				_ = json.Unmarshal(env.Data, &h)
+				helloCh <- h
+			case proto.TypeReport:
+				var rep proto.Report
+				_ = json.Unmarshal(env.Data, &rep)
+				reportCh <- rep
+			}
+		}
+	}))
+	defer srv.Close()
+
+	fs := &fakeSampler{}
+	c, err := NewClient(Config{Dashboard: srv.URL, ID: "id1", Secret: "sec"}, fs, slog.New(slog.DiscardHandler), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _ = c.Run(ctx) }()
+
+	select {
+	case h := <-helloCh:
+		if h.IPv4 != "" {
+			t.Errorf("首个 hello 不应带 IPv4: %+v", h)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("未收到首个 hello")
+	}
+
+	c.SetNetwork(collect.Network{Country: "JP", IPv4: "1.2.3.4"})
+	select {
+	case h := <-helloCh:
+		if h.IPv4 != "1.2.3.4" {
+			t.Fatalf("重发的 hello 应带上新的 IPv4: %+v", h)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("未在 2 秒内收到重发的 hello")
+	}
+
+	c.SetNetwork(collect.Network{Country: "JP", IPv4: "1.2.3.4"})
+	select {
+	case h := <-helloCh:
+		t.Fatalf("取值未变化时不应重发 hello: %+v", h)
+	case <-reportCh:
+		// 期间收到 report 属于预期行为
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestSetNetworkBeforeRunIncludedInInitialHello 验证在 Run 之前调用 SetNetwork 时，
+// 该值会体现在连接建立后发送的第一条 hello 里，而不会额外触发第二条 hello
+func TestSetNetworkBeforeRunIncludedInInitialHello(t *testing.T) {
+	helloCh := make(chan proto.Hello, 4)
+	reportCh := make(chan proto.Report, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		ctx := r.Context()
+		for {
+			_, b, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			env, err := proto.Decode(b)
+			if err != nil {
+				continue
+			}
+			switch env.Type {
+			case proto.TypeHello:
+				var h proto.Hello
+				_ = json.Unmarshal(env.Data, &h)
+				helloCh <- h
+			case proto.TypeReport:
+				var rep proto.Report
+				_ = json.Unmarshal(env.Data, &rep)
+				reportCh <- rep
+			}
+		}
+	}))
+	defer srv.Close()
+
+	fs := &fakeSampler{}
+	c, err := NewClient(Config{Dashboard: srv.URL, ID: "id1", Secret: "sec"}, fs, slog.New(slog.DiscardHandler), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.SetNetwork(collect.Network{Country: "JP", IPv4: "1.2.3.4"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _ = c.Run(ctx) }()
+
+	select {
+	case h := <-helloCh:
+		if h.IPv4 != "1.2.3.4" {
+			t.Fatalf("Run 前设置的网络信息应体现在首个 hello 中: %+v", h)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("未收到首个 hello")
+	}
+
+	select {
+	case h := <-helloCh:
+		t.Fatalf("不应发送第二条 hello: %+v", h)
+	case <-reportCh:
+		// 期间收到 report 属于预期行为
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

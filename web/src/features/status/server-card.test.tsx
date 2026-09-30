@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { cleanup, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { makeMetrics, makeServer } from '@/test/fixtures'
@@ -44,5 +44,17 @@ describe('ServerCard', () => {
     renderWithProviders(<ServerCard server={makeServer({ metrics: makeMetrics({ cpu: 95 }) })} now={NOW} />)
     const cpuBar = screen.getAllByRole('progressbar')[0]
     expect(cpuBar.firstElementChild).toHaveClass('bg-bad')
+  })
+
+  it('显示 IPv4 / IPv6 支持标记，都不支持时不显示', () => {
+    // renderWithProviders 的返回值虽含 rerender，但它会丢失手动拼装的路由等上下文
+    // （RTL 的 rerender 只替换根节点，不会重新套 Provider），因此改为分别渲染两次
+    renderWithProviders(<ServerCard server={makeServer({ ipv4: true, ipv6: true })} now={0} />)
+    expect(screen.getByText('v4')).toBeInTheDocument()
+    expect(screen.getByText('v6')).toBeInTheDocument()
+    expect(screen.getByText('支持 IPv4')).toHaveClass('sr-only')
+    cleanup()
+    renderWithProviders(<ServerCard server={makeServer({ ipv4: false, ipv6: false })} now={0} />)
+    expect(screen.queryByText('v4')).not.toBeInTheDocument()
   })
 })

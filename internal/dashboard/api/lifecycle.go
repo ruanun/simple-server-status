@@ -99,6 +99,10 @@ func (a *API) RunMaintenance(ctx context.Context) {
 		case <-t.C:
 			a.touchOnline(ctx)
 			a.refreshUptime(ctx)
+			if a.Now().Sub(a.lastEventCleanup) >= time.Hour {
+				a.cleanupEvents(ctx)
+				a.lastEventCleanup = a.Now()
+			}
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/ruanun/simple-server-status/internal/dashboard/history"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
 	"github.com/ruanun/simple-server-status/internal/dashboard/notify"
+	"github.com/ruanun/simple-server-status/internal/dashboard/outage"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 	"github.com/ruanun/simple-server-status/internal/dashboard/traffic"
 )
@@ -36,6 +37,8 @@ type Deps struct {
 	Version string
 	// NotifyOptions 通知发送选项（零值使用默认值；测试可替换）
 	NotifyOptions notify.Options
+	// OutageThreshold 离线记录门槛，0 使用默认 60 秒；仅测试缩短
+	OutageThreshold time.Duration
 }
 
 // API HTTP 接口集合，缓存服务器列表与设置（修改后立即刷新）
@@ -50,9 +53,12 @@ type API struct {
 	bc       *broadcaster
 	conns    connTracker
 	notifier *notify.Notifier
+	outages  *outage.Tracker
 
 	upMu        sync.RWMutex
 	uptimeCache map[string]*float64 // 24 小时在线率，每分钟刷新
+
+	lastEventCleanup time.Time // 上次清理离线记录与通知记录的时间
 }
 
 // New 创建 API 并加载缓存
@@ -60,8 +66,15 @@ func New(ctx context.Context, d Deps) (*API, error) {
 	a := &API{Deps: d, agents: newAgentRegistry()}
 	a.bc = newBroadcaster(a)
 	a.notifier = notify.NewNotifier(a, d.Hub, d.Traffic, d.Store, notify.NewSender(d.NotifyOptions, d.Log), d.NotifyOptions, d.Now, d.Log)
+	a.outages = outage.New(a, d.Hub, d.Store, d.Now, d.Log, d.OutageThreshold)
 	if err := a.reload(ctx); err != nil {
 		return nil, err
+	}
+	// 上次进程被强杀时仍在「发送中」的记录不会再有结果，启动时（通知任务运行前）记为失败
+	if n, err := d.Store.FailPendingNotifyLog(ctx, notify.ErrShutdown.Error(), d.Now().Unix()); err != nil {
+		d.Log.Warn("更新遗留的发送中通知记录失败", "err", err)
+	} else if n > 0 {
+		d.Log.Info("已将上次退出时未完成的通知记录标记为失败", "count", n)
 	}
 	a.refreshUptime(ctx)
 	return a, nil

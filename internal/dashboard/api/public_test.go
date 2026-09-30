@@ -296,6 +296,68 @@ func TestPublicViewHidesFilterID(t *testing.T) {
 	}
 }
 
+func TestPublicViewHidesAgentVersion(t *testing.T) {
+	e := newTestEnv(t)
+	live := e.addServer(store.Server{Name: "live"})
+	e.api.Hub.SetStatic(live.ID, proto.Hello{OS: "linux", AgentVersion: "2.0.0-beta.3"})
+	stored := e.addServer(store.Server{Name: "stored"})
+	if err := e.st.SetStaticInfo(context.Background(), stored.ID, "1.2.3.4", proto.Hello{OS: "linux", AgentVersion: "2.0.0-beta.1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.api.reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tok := e.adminToken()
+	for _, req := range []struct{ path, token string }{
+		{"/api/public/servers", ""},
+		{"/api/public/servers", tok},
+		{"/api/public/servers/" + live.ID, ""},
+		{"/api/public/servers/" + stored.ID, tok},
+	} {
+		code, body := e.do("GET", req.path, req.token, nil)
+		if code != http.StatusOK || bytes.Contains(body, []byte("2.0.0-beta")) || !bytes.Contains(body, []byte(`"os":"linux"`)) {
+			t.Fatalf("%s 应保留静态信息但不含 Agent 版本: %d %s", req.path, code, body)
+		}
+	}
+	_, body := e.do("GET", "/api/admin/servers", tok, nil)
+	if !bytes.Contains(body, []byte(`"agent_version":"2.0.0-beta.3"`)) {
+		t.Fatalf("后台列表仍应显示 Agent 版本: %s", body)
+	}
+}
+
+func TestPublicViewIPFlags(t *testing.T) {
+	e := newTestEnv(t)
+	s := e.addServer(store.Server{Name: "v4only"})
+	// static_info 来自数据库；用 SetStaticInfo + reload 保证后台列表能读到地址（Hub.SetStatic 只更新内存缓存）
+	if err := e.st.SetStaticInfo(context.Background(), s.ID, "", proto.Hello{OS: "linux", IPv4: "203.0.113.7"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.api.reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	old := e.addServer(store.Server{Name: "old"})
+	e.api.Hub.SetStatic(old.ID, proto.Hello{OS: "linux"})
+	code, body := e.do("GET", "/api/public/servers", "", nil)
+	if code != http.StatusOK || bytes.Contains(body, []byte("203.0.113.7")) {
+		t.Fatalf("公开接口不应包含 IP 地址: %s", body)
+	}
+	got := map[string][2]bool{}
+	for _, v := range decodeData[[]struct {
+		ID   string `json:"id"`
+		IPv4 bool   `json:"ipv4"`
+		IPv6 bool   `json:"ipv6"`
+	}](t, body) {
+		got[v.ID] = [2]bool{v.IPv4, v.IPv6}
+	}
+	if got[s.ID] != [2]bool{true, false} || got[old.ID] != [2]bool{false, false} {
+		t.Fatalf("IP 标记错误 %+v", got)
+	}
+	_, body = e.do("GET", "/api/admin/servers", e.adminToken(), nil)
+	if !bytes.Contains(body, []byte(`"ipv4":"203.0.113.7"`)) {
+		t.Fatalf("后台应包含完整地址: %s", body)
+	}
+}
+
 func TestPublicStats(t *testing.T) {
 	e := newTestEnv(t) // 时钟为 2026-03-15 12:00 UTC
 	s := e.addServer(store.Server{Name: "a", TrafficResetDay: 1})

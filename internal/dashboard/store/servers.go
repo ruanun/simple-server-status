@@ -233,6 +233,8 @@ func (s *Store) DeleteServer(ctx context.Context, id string) error {
 			`DELETE FROM traffic_monthly WHERE server_id = ?`,
 			`DELETE FROM traffic_daily WHERE server_id = ?`,
 			`DELETE FROM notify_state WHERE server_id = ?`,
+			`DELETE FROM outages WHERE server_id = ?`,
+			`DELETE FROM notify_log WHERE server_id = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, id); err != nil {
 				return err

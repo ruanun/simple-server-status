@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
@@ -132,22 +133,51 @@ func post(ctx context.Context, client *http.Client, target string, body []byte, 
 	return err
 }
 
-// SendTest 同步向已启用的渠道各发送一条测试消息（不重试）。
+// LogStore 通知记录存储（store.Store 实现）
+type LogStore interface {
+	AddNotifyLog(ctx context.Context, l store.NotifyLog) (int64, error)
+	FinishNotifyLog(ctx context.Context, id int64, status, errMsg string, doneAt int64) error
+}
+
+// SendTest 同步、并行地向已启用的渠道各发送一条测试消息（不重试）；logs 非 nil 时写入通知记录。
 // 返回值键为 webhook、telegram：nil 表示未启用，"ok" 表示成功，否则为错误信息
-func SendTest(ctx context.Context, cfg store.NotifySettings, o Options, now time.Time) map[string]*string {
+func SendTest(ctx context.Context, cfg store.NotifySettings, o Options, now time.Time, logs LogStore) map[string]*string {
 	o = o.withDefaults()
 	res := map[string]*string{"webhook": nil, "telegram": nil}
 	e := Event{Kind: KindTest, Time: now.Unix()}
 	Render(&e, cfg.Lang)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for _, ch := range Channels(cfg, o) {
-		cctx, cancel := context.WithTimeout(ctx, o.Timeout)
-		err := ch.Send(cctx, e)
-		cancel()
-		msg := "ok"
-		if err != nil {
-			msg = err.Error()
+		var logID int64
+		if logs != nil {
+			id, err := logs.AddNotifyLog(ctx, store.NotifyLog{Kind: KindTest, Channel: ch.Name(), Title: e.Title, Message: e.Message, Status: store.LogPending, CreatedAt: e.Time})
+			if err == nil {
+				logID = id
+			}
 		}
-		res[ch.Name()] = &msg
+		wg.Add(1)
+		go func(ch Channel, logID int64) {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, o.Timeout)
+			err := ch.Send(cctx, e)
+			cancel()
+			msg, status := "ok", store.LogSent
+			if err != nil {
+				msg, status = err.Error(), store.LogFailed
+			}
+			if logs != nil && logID != 0 { // 请求被取消也要写入结果
+				errText := ""
+				if err != nil {
+					errText = msg
+				}
+				_ = logs.FinishNotifyLog(context.WithoutCancel(ctx), logID, status, errText, time.Now().Unix())
+			}
+			mu.Lock()
+			res[ch.Name()] = &msg
+			mu.Unlock()
+		}(ch, logID)
 	}
+	wg.Wait()
 	return res
 }

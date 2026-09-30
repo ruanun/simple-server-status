@@ -54,6 +54,24 @@ export function AvailabilityText({ value, label }: { value: number | null | unde
   )
 }
 
+/** IpBadges IPv4 / IPv6 支持标记；都不支持时不显示 */
+export function IpBadges({ v4, v6 }: { v4?: boolean; v6?: boolean }) {
+  const { t } = useTranslation()
+  if (!v4 && !v6) return null
+  const badge = (label: string, sr: string) => (
+    <span className="rounded border px-1 text-[10px] leading-4 text-muted-foreground" title={sr}>
+      <span aria-hidden>{label}</span>
+      <span className="sr-only">{sr}</span>
+    </span>
+  )
+  return (
+    <span className="inline-flex shrink-0 gap-1">
+      {v4 && badge('v4', t('status.ipv4'))}
+      {v6 && badge('v6', t('status.ipv6'))}
+    </span>
+  )
+}
+
 /** LastReport 最后上报的相对时间，悬停显示具体时间；从未上报时显示「尚未上报」 */
 export function LastReport({ ts, now }: { ts: number; now: number }) {
   const { t } = useTranslation()

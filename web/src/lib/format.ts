@@ -89,3 +89,19 @@ export function formatMonthDay(day: string): string {
   const [, m, d] = day.split('-')
   return `${Number(m)}/${Number(d)}`
 }
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
+}
+
+/** formatHM 本地时间「03:12」 */
+export function formatHM(ts: number): string {
+  const d = new Date(ts * 1000)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** formatMDHM 本地时间「9/28 03:12」 */
+export function formatMDHM(ts: number): string {
+  const d = new Date(ts * 1000)
+  return `${d.getMonth() + 1}/${d.getDate()} ${formatHM(ts)}`
+}

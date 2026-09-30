@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
-import { AvailabilityText, ExpiryText, OnlineDot } from '@/components/status-bits'
+import { AvailabilityText, ExpiryText, IpBadges, OnlineDot } from '@/components/status-bits'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { UsageBar } from '@/components/usage-bar'
 import { useLang } from '@/i18n/use-lang'
@@ -76,6 +76,7 @@ export function ServerTable({ servers, now, sort, onSort }: { servers: ServerVie
                       {s.name}
                     </Link>
                     <Flag code={s.country} />
+                    <IpBadges v4={s.ipv4} v6={s.ipv6} />
                   </div>
                 </TableCell>
                 <TableCell className="hidden text-xs text-muted-foreground xl:table-cell">{osLabel(s)}</TableCell>

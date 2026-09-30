@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,7 +40,7 @@ func newRootCmd() *cobra.Command {
 	pf.String("dashboard", "", "Dashboard 地址，如 https://status.example.com")
 	pf.String("id", "", "服务器 ID")
 	pf.String("secret", "", "服务器密钥")
-	pf.Bool("detect-country", true, "是否通过 Cloudflare trace 探测国家代码")
+	pf.Bool("detect-country", true, "是否通过 Cloudflare trace 探测国家代码与公网 IPv4/IPv6")
 	pf.String("log-level", "info", "日志级别：debug/info/warn/error")
 	pf.String("log-file", "", "日志文件路径，留空只输出到标准输出")
 
@@ -105,21 +104,43 @@ func runAgent(cmd *cobra.Command, _ []string) error {
 	return run(ctx)
 }
 
+// networkRefresh 定时重新探测公网地址的间隔
+const networkRefresh = 6 * time.Hour
+
 // serve 连接 Dashboard 并周期上报，直到 ctx 结束或 Dashboard 要求停止
 func serve(ctx context.Context, cfg agent.Config, log *slog.Logger) error {
+	// 派生可取消的 ctx：serve 返回时（包括 Run 收到 stop 指令返回 ErrStopped）主动结束探测协程，
+	// 不依赖上层 ctx 的取消时机
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	client, err := agent.NewClient(cfg, collect.New(log), log, version)
 	if err != nil {
 		return err
 	}
 	if cfg.DetectCountry {
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		cc, err := collect.DetectCountry(dctx, http.DefaultClient, collect.TraceURL)
-		cancel()
-		if err != nil {
-			log.Warn("探测国家代码失败", "err", err)
-		} else {
-			client.SetCountry(cc)
+		probe := func() {
+			dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			n, err := collect.DetectNetwork(dctx, collect.TraceURL, collect.TraceURL)
+			cancel()
+			if err != nil {
+				log.Warn("探测网络失败", "err", err)
+				return
+			}
+			client.SetNetwork(n)
 		}
+		probe()
+		go func() {
+			t := time.NewTicker(networkRefresh)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					probe()
+				}
+			}
+		}()
 	}
 	log.Info("Agent 启动", "version", version, "dashboard", cfg.Dashboard)
 	err = client.Run(ctx)

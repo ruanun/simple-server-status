@@ -49,6 +49,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | GET | `/api/public/servers/:id` | 单台服务器的 `ServerView`；不存在或未登录访问隐藏服务器时返回 404 |
 | GET | `/api/public/servers/:id/metrics?range=<range>` | 历史数据点数组，`range` 默认 `1h` |
 | GET | `/api/public/servers/:id/stats` | 在线率与当月每日流量，见下文；不存在或未登录访问隐藏服务器时返回 404 |
+| GET | `/api/public/servers/:id/outages` | 最近离线记录，见下文；不存在或未登录访问隐藏服务器时返回 404 |
 | GET | `/api/public/ws` | 浏览器实时推送，见下文 |
 
 可见性规则：隐藏服务器只对已登录用户返回；价格字段（`price`、`currency`、`billing_cycle`）在设置「公开显示价格」关闭时只对已登录用户返回；任何公开接口都不返回 IP 与密钥。
@@ -61,7 +62,8 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `online` | 是否在线：连接存在且最近一次上报距今不超过 3 倍上报间隔（最少 6 秒） |
 | `last_seen` | 最近一次上报（或断开）时间 |
 | `uptime_24h` | 最近 24 小时在线率（百分比，0–100，保留 1 位小数）；窗口不足一个采样周期或服务器刚创建时为 `null`，每分钟随维护任务刷新一次 |
-| `static` | 静态信息，结构同 Agent 的 `hello`；从未连接过时为 `null` |
+| `ipv4`、`ipv6` | 是否探测到对应公网地址的布尔标记（地址本身不返回）；从未连接或 Agent 未上报时为 `false` |
+| `static` | 静态信息，结构同 Agent 的 `hello`，但 `agent_version` 与 `ipv4`、`ipv6` 地址始终为空（Agent 版本只在后台服务器列表中提供，IP 地址是否存在见上面的 `ipv4`/`ipv6` 标记）；从未连接过时为 `null` |
 | `metrics` | 最新一次上报，结构同 Agent 的 `report`（不含 `filter_id`）；无数据时为 `null` |
 | `traffic` | 当前周期流量：`in`、`out`、`used`（按 `mode` 计算）、`limit`（`null` 表示不限）、`mode`（`sum`/`in`/`out`）、`reset_day`、`period`（周期起始日 `YYYY-MM-DD`） |
 | `expire_at` | 到期时间，`null` 表示长期 |
@@ -97,6 +99,14 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 
 `uptime_24h`、`uptime_7d` 含义同 `ServerView.uptime_24h`，窗口分别为 24 小时、7 天（7 天在线率取 10 分钟级数据）。`period_start`、`period_end` 为当前计费周期（由服务器的 `traffic_reset_day` 决定）的起止日期（Dashboard 本地时区 `YYYY-MM-DD`）。`daily` 覆盖该周期从开始到今天的每一天，缺失的日期补 0，`in`、`out` 为当天入站、出站字节数。
 
+### GET /api/public/servers/:id/outages
+
+```json
+[{"start_at": 1790000000, "end_at": 1790000300, "duration": 300}]
+```
+
+最近 10 条离线记录，按开始时间倒序；`end_at` 为 `null` 表示仍在离线中，此时 `duration` 按当前时间计算。离线门槛（持续 60 秒才记录）与保留期（90 天）见 [配置 - 事件](configuration.md#事件)。
+
 ## 登录与管理接口
 
 除 `POST /api/auth/login` 外均需要 `Authorization: Bearer <token>`。
@@ -109,16 +119,18 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | GET | `/api/admin/servers` | — | `Server` 数组，每项额外带 `online`、`agent_version`（当前连接或最近一次连接的 Agent 版本，未连接过为空）、`outdated`（Agent 版本低于 Dashboard 版本；任一方不是正式发布版本号时为 `false`）、`uptime_24h`（同 `ServerView`） |
 | POST | `/api/admin/servers` | `ServerInput` | 新建的 `Server`（含自动生成的 `id` 与 `secret`） |
 | PUT | `/api/admin/servers/:id` | `ServerInput` | 更新后的 `Server`；在线的 Agent 会立即收到新的 `config` |
-| DELETE | `/api/admin/servers/:id` | — | `{}`；同时删除历史、流量与通知状态，在线的 Agent 收到 `stop` 后退出 |
+| DELETE | `/api/admin/servers/:id` | — | `{}`；同时删除历史、流量、通知状态、离线记录与通知记录，在线的 Agent 收到 `stop` 后退出 |
 | POST | `/api/admin/servers/:id/reset-secret` | — | `{"secret"}`；旧密钥立即失效，当前连接被断开 |
 | GET | `/api/admin/servers/:id/install?dashboard=<面板地址>` | — | `{"linux", "windows"}` 两条安装命令 |
 | PUT | `/api/admin/server-order` | `{"ids": [...]}` | `{}`；按数组顺序设置 `sort` |
 | GET | `/api/admin/settings` | — | `Settings` |
 | PUT | `/api/admin/settings` | `Settings` | 保存后的 `Settings` |
-| POST | `/api/admin/notify/test` | `NotifySettings` | `{"webhook": "ok" \| 错误信息 \| null, "telegram": ...}`，见下文 |
+| POST | `/api/admin/notify/test` | `NotifySettings` | `{"webhook": "ok" \| 错误信息 \| null, "telegram": ...}`，见下文；每个已启用渠道都会写入一条通知记录 |
 | GET | `/api/admin/export` | — | 导出文件（见下文） |
 | POST | `/api/admin/import` | 导出文件 | `{"servers": <导入数量>}` |
 | GET | `/api/admin/overview` | — | `{"monthly_cost": [...], "expiring": [...]}`，见下文 |
+| GET | `/api/admin/outages` | 查询参数：`server_id`（可选）、`page`、`size` | `{"items": [AdminOutage, ...], "total": N}`，见下文 |
+| GET | `/api/admin/notify-log` | 查询参数：`server_id`（可选）、`status`（可选，`pending`/`sent`/`failed`）、`page`、`size` | `{"items": [NotifyLog, ...], "total": N}`，见下文 |
 
 `install` 的 `dashboard` 参数必须是 `http(s)://主机[:端口][/路径]` 形式，否则返回 `invalid_input`。
 
@@ -198,7 +210,29 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 {"webhook": "ok", "telegram": null}
 ```
 
-未启用的渠道为 `null`；已启用且发送成功为 `"ok"`，失败为错误信息字符串。未配置任何渠道时返回 `invalid_input`。
+未启用的渠道为 `null`；已启用且发送成功为 `"ok"`，失败为错误信息字符串。未配置任何渠道时返回 `invalid_input`。此接口不经过发送队列，但仍会给每个已启用渠道各写入一条 `kind: "test"` 的通知记录，可在 `/api/admin/notify-log` 中查到。
+
+### GET /api/admin/outages、GET /api/admin/notify-log
+
+后台「事件」页使用的离线记录与通知记录列表，均支持分页：`page` 默认 1，`size` 默认 50、超过 100 按 100 处理；`page`、`size` 不是正整数时返回 `invalid_input`。`server_id` 留空表示不筛选服务器；`status` 留空表示不筛选状态，非 `pending`/`sent`/`failed` 时返回 `invalid_input`。两类记录均保留 90 天，到期自动清理。
+
+`AdminOutage`（在 `GET /api/public/servers/:id/outages` 的字段基础上增加）：
+
+```json
+{"id": 1, "server_id": "...", "server_name": "...", "start_at": 1790000000, "end_at": null, "duration": 120}
+```
+
+`NotifyLog`：
+
+```json
+{
+  "id": 1, "server_id": "...", "server_name": "...", "kind": "offline", "channel": "webhook",
+  "title": "[离线] node-1", "message": "服务器 node-1 已离线 5 分钟",
+  "status": "sent", "error": "", "created_at": 1790000000, "done_at": 1790000003
+}
+```
+
+`kind` 取值同 Webhook 负载的 `event`（见下文「通知」一节），「发送测试」产生的记录 `kind` 为 `test`、`server_id`/`server_name` 为空。`status` 为 `pending`（发送中）、`sent`（成功）、`failed`（失败，`error` 说明原因）。`error` 不包含 Telegram Token 或 Webhook 地址。
 
 ### 导出文件
 
@@ -249,7 +283,7 @@ ID 不存在或密钥错误时返回 HTTP 401，Agent 随后每 5 分钟重试�
 
 | 方向 | type | data |
 |---|---|---|
-| Agent → Dashboard | `hello` | 静态信息：`os`、`platform`、`platform_version`、`kernel`、`arch`、`virtualization`、`cpu_model`、`cpu_cores`、`mem_total`、`swap_total`、`disk_total`、`agent_version`、`country` |
+| Agent → Dashboard | `hello` | 静态信息：`os`、`platform`、`platform_version`、`kernel`、`arch`、`virtualization`、`cpu_model`、`cpu_cores`、`mem_total`、`swap_total`、`disk_total`、`agent_version`、`country`、`ipv4`、`ipv6` |
 | Dashboard → Agent | `config` | 采集参数：`report_interval`（秒）、`nic_include`、`nic_exclude`、`mount_exclude`、`filter_id` |
 | Agent → Dashboard | `report` | 动态指标，见下表 |
 | Dashboard → Agent | `stop` | `{"reason": "deleted"}`：服务器已被删除，Agent 收到后退出进程且不再重连 |

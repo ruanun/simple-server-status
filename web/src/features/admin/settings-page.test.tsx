@@ -207,6 +207,7 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(tested).toMatchObject({ webhook_url: 'https://hook.example.com/x', telegram_token: '123:abc', offline_minutes: 10 }))
     expect(await screen.findByText('Webhook：发送成功')).toBeInTheDocument()
     expect(screen.getByText('Telegram：对方返回 HTTP 401 Unauthorized')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看通知记录' })).toHaveAttribute('href', '/admin/events?tab=notify')
     await user.click(screen.getByRole('button', { name: '保存通知设置' }))
     await waitFor(() => expect(saved).toMatchObject({ site_title: 'Simple Server Status', notify: { webhook_url: 'https://hook.example.com/x', offline_minutes: 10 } }))
   })

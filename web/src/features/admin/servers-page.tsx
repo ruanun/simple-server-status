@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BellOff, EyeOff, GripVertical, MoreHorizontal, Plus, StickyNote } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { Flag } from '@/components/flag'
@@ -45,9 +46,10 @@ interface RowProps {
   onUpgrade: () => void
   onReset: () => void
   onDelete: () => void
+  onEvents: () => void
 }
 
-function SortableRow({ server: s, lang, now, onEdit, onInstall, onUpgrade, onReset, onDelete }: RowProps) {
+function SortableRow({ server: s, lang, now, onEdit, onInstall, onUpgrade, onReset, onDelete, onEvents }: RowProps) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id })
   return (
@@ -85,7 +87,18 @@ function SortableRow({ server: s, lang, now, onEdit, onInstall, onUpgrade, onRes
         </div>
       </TableCell>
       <TableCell className="hidden sm:table-cell">{s.group || '—'}</TableCell>
-      <TableCell className="hidden font-mono text-xs md:table-cell">{s.last_ip || '—'}</TableCell>
+      <TableCell className="hidden font-mono text-xs md:table-cell" title={s.last_ip ? t('admin.connFrom', { ip: s.last_ip }) : undefined}>
+        {s.static_info?.ipv4 || s.static_info?.ipv6 ? (
+          <>
+            <div>{s.static_info.ipv4 || '—'}</div>
+            <div className="max-w-40 truncate" title={s.static_info.ipv6 || undefined}>
+              {s.static_info.ipv6 || '—'}
+            </div>
+          </>
+        ) : (
+          s.last_ip || '—'
+        )}
+      </TableCell>
       <TableCell className="hidden text-xs tabular md:table-cell">
         <LastReport ts={s.last_seen} now={now} />
       </TableCell>
@@ -111,6 +124,7 @@ function SortableRow({ server: s, lang, now, onEdit, onInstall, onUpgrade, onRes
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onEdit}>{t('admin.edit')}</DropdownMenuItem>
             <DropdownMenuItem onSelect={onInstall}>{t('admin.install')}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onEvents}>{t('admin.events')}</DropdownMenuItem>
             {s.outdated && <DropdownMenuItem onSelect={onUpgrade}>{t('install.upgradeTitle')}</DropdownMenuItem>}
             <DropdownMenuItem onSelect={onReset}>{t('admin.resetSecret')}</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -131,6 +145,7 @@ export function ServersPage() {
   const lang = useLang()
   const now = useNow()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { data, isLoading, error } = useQuery({ queryKey: adminKeys.servers, queryFn: adminApi.servers, refetchInterval: 10_000 })
   const [editing, setEditing] = useState<AdminServer | 'new' | null>(null)
   const [installFor, setInstallFor] = useState<{ server: AdminServer; mode: 'install' | 'upgrade' } | null>(null)
@@ -219,6 +234,7 @@ export function ServersPage() {
                     onUpgrade={() => setInstallFor({ server: s, mode: 'upgrade' })}
                     onReset={() => setConfirm({ kind: 'reset', server: s })}
                     onDelete={() => setConfirm({ kind: 'delete', server: s })}
+                    onEvents={() => navigate(`/admin/events?server=${encodeURIComponent(s.id)}`)}
                   />
                 ))}
               </TableBody>

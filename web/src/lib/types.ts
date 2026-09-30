@@ -14,6 +14,8 @@ export interface Hello {
   disk_total: number
   agent_version: string
   country: string
+  ipv4?: string
+  ipv6?: string
 }
 
 export interface Disk {
@@ -75,6 +77,8 @@ export interface ServerView {
   currency?: string
   billing_cycle?: BillingCycle
   uptime_24h: number | null
+  ipv4: boolean
+  ipv6: boolean
 }
 
 export interface Point {
@@ -194,4 +198,40 @@ export interface ExpiringServer {
 export interface Overview {
   monthly_cost: CostGroup[]
   expiring: ExpiringServer[]
+}
+
+export interface PublicOutage {
+  start_at: number
+  end_at: number | null
+  duration: number
+}
+
+export interface AdminOutage {
+  id: number
+  server_id: string
+  server_name: string
+  start_at: number
+  end_at: number | null
+  duration: number
+}
+
+export type NotifyLogStatus = 'pending' | 'sent' | 'failed'
+
+export interface NotifyLogItem {
+  id: number
+  server_id: string
+  server_name: string
+  kind: string
+  channel: string
+  title: string
+  message: string
+  status: NotifyLogStatus
+  error: string
+  created_at: number
+  done_at: number | null
+}
+
+export interface Paged<T> {
+  items: T[]
+  total: number
 }

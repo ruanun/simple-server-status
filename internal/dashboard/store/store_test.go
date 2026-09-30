@@ -34,7 +34,7 @@ func TestOpenMigratesIdempotently(t *testing.T) {
 	}
 	defer s.Close()
 	var v int
-	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 2 {
+	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 3 {
 		t.Fatalf("schema_version = %d, %v", v, err)
 	}
 }
@@ -323,5 +323,155 @@ func TestTrafficDaily(t *testing.T) {
 	}
 	if got, _ = s.QueryTrafficDaily(ctx, "a", "2026-01-01", "2026-12-31"); len(got) != 1 || got[0].Day != "2026-09-02" {
 		t.Fatalf("清理后 %+v", got)
+	}
+}
+
+func TestOutages(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id1, err := s.CreateOutage(ctx, "a", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateOutage(ctx, "b", 200); err != nil {
+		t.Fatal(err)
+	}
+	open, _ := s.OpenOutages(ctx)
+	if len(open) != 2 {
+		t.Fatalf("应有 2 条进行中 %+v", open)
+	}
+	if err := s.CloseOutage(ctx, id1, 150); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseOutage(ctx, 999, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("不存在应返回 ErrNotFound: %v", err)
+	}
+	all, total, err := s.ListOutages(ctx, "", 10, 0)
+	if err != nil || total != 2 || all[0].ServerID != "b" || all[1].EndAt == nil || *all[1].EndAt != 150 {
+		t.Fatalf("列表错误 %+v %d %v", all, total, err)
+	}
+	onlyA, total, _ := s.ListOutages(ctx, "a", 10, 0)
+	if total != 1 || len(onlyA) != 1 {
+		t.Fatalf("筛选错误 %+v", onlyA)
+	}
+	page2, _, _ := s.ListOutages(ctx, "", 1, 1)
+	if len(page2) != 1 || page2[0].ServerID != "a" {
+		t.Fatalf("分页错误 %+v", page2)
+	}
+	if n, _ := s.DeleteOutagesBefore(ctx, 1000); n != 1 {
+		t.Fatalf("只应删除已结束的记录，删除 %d", n)
+	}
+}
+
+func TestNotifyLog(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: "a", ServerName: "hk", Kind: "offline", Channel: "webhook", Title: "t", Message: "m", Status: LogPending, CreatedAt: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddNotifyLog(ctx, NotifyLog{Kind: "test", Channel: "telegram", Title: "t", Message: "m", Status: LogPending, CreatedAt: 200}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishNotifyLog(ctx, id, LogFailed, "对方返回 HTTP 500", 110); err != nil {
+		t.Fatal(err)
+	}
+	list, total, err := s.ListNotifyLog(ctx, "", "", 10, 0)
+	if err != nil || total != 2 || list[0].Kind != "test" || list[1].Status != LogFailed || list[1].DoneAt == nil || list[1].Error == "" {
+		t.Fatalf("列表错误 %+v %d %v", list, total, err)
+	}
+	failed, total, _ := s.ListNotifyLog(ctx, "a", LogFailed, 10, 0)
+	if total != 1 || len(failed) != 1 {
+		t.Fatalf("筛选错误 %+v", failed)
+	}
+	if n, _ := s.DeleteNotifyLogBefore(ctx, 150); n != 1 {
+		t.Fatalf("清理数量 %d", n)
+	}
+}
+
+func TestDeleteServerCleansEvents(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	sv := Server{Name: "a"}
+	if err := s.CreateServer(ctx, &sv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateOutage(ctx, sv.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: sv.ID, Kind: "offline", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteServer(ctx, sv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, n, _ := s.ListOutages(ctx, sv.ID, 10, 0); n != 0 {
+		t.Fatal("离线记录未清理")
+	}
+	if _, n, _ := s.ListNotifyLog(ctx, sv.ID, "", 10, 0); n != 0 {
+		t.Fatal("通知记录未清理")
+	}
+}
+
+func TestDeleteOrphanEvents(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	sv := Server{Name: "a"}
+	if err := s.CreateServer(ctx, &sv); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{sv.ID, "gone"} {
+		if _, err := s.CreateOutage(ctx, id, 1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: id, Kind: "offline", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.AddNotifyLog(ctx, NotifyLog{Kind: "test", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.DeleteOrphanOutages(ctx); err != nil || n != 1 {
+		t.Fatalf("应删除 1 条孤儿离线记录，实际 %d %v", n, err)
+	}
+	if n, err := s.DeleteOrphanNotifyLog(ctx); err != nil || n != 1 {
+		t.Fatalf("应删除 1 条孤儿通知记录，实际 %d %v", n, err)
+	}
+	if list, _, _ := s.ListOutages(ctx, "", 10, 0); len(list) != 1 || list[0].ServerID != sv.ID {
+		t.Fatalf("现存服务器的离线记录应保留 %+v", list)
+	}
+	list, _, _ := s.ListNotifyLog(ctx, "", "", 10, 0)
+	ids := map[string]bool{}
+	for _, l := range list {
+		ids[l.ServerID] = true
+	}
+	if len(list) != 2 || !ids[sv.ID] || !ids[""] {
+		t.Fatalf("现存服务器与测试消息的通知记录应保留 %+v", list)
+	}
+}
+
+func TestFailPendingNotifyLog(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pending, _ := s.AddNotifyLog(ctx, NotifyLog{ServerID: "a", Kind: "offline", Channel: "webhook", Status: LogPending, CreatedAt: 1})
+	sent, _ := s.AddNotifyLog(ctx, NotifyLog{ServerID: "a", Kind: "offline", Channel: "telegram", Status: LogPending, CreatedAt: 1})
+	if err := s.FinishNotifyLog(ctx, sent, LogSent, "", 5); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.FailPendingNotifyLog(ctx, "退出时未能发送", 10); err != nil || n != 1 {
+		t.Fatalf("应更新 1 条，实际 %d %v", n, err)
+	}
+	list, _, _ := s.ListNotifyLog(ctx, "", "", 10, 0)
+	for _, l := range list {
+		switch l.ID {
+		case pending:
+			if l.Status != LogFailed || l.Error != "退出时未能发送" || l.DoneAt == nil || *l.DoneAt != 10 {
+				t.Fatalf("发送中的记录应标记为失败 %+v", l)
+			}
+		case sent:
+			if l.Status != LogSent || *l.DoneAt != 5 {
+				t.Fatalf("已完成的记录不应改动 %+v", l)
+			}
+		}
 	}
 }

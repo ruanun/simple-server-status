@@ -23,6 +23,7 @@ export const router = createBrowserRouter([
               { index: true, element: <Navigate to="servers" replace /> },
               { path: 'servers', lazy: async () => ({ Component: (await import('@/features/admin/servers-page')).ServersPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/features/admin/settings-page')).SettingsPage }) },
+              { path: 'events', lazy: async () => ({ Component: (await import('@/features/admin/events-page')).EventsPage }) },
             ],
           },
         ],

@@ -36,6 +36,8 @@ type Options struct {
 	Log            *slog.Logger
 	Version        string
 	WebFS          fs.FS
+	// OutageThreshold 离线记录门槛，0 使用默认 60 秒；仅测试缩短
+	OutageThreshold time.Duration
 }
 
 // Run 启动服务，直到 ctx 结束后优雅退出
@@ -65,7 +67,7 @@ func Run(ctx context.Context, o Options) error {
 	a, err := api.New(ctx, api.Deps{
 		Store: st, Hub: hub.New(now), History: rec, Traffic: tr,
 		Auth: auth.NewManager(secret, now), Limiter: auth.NewLimiter(now), Log: o.Log, Now: now,
-		Version: o.Version,
+		Version: o.Version, OutageThreshold: o.OutageThreshold,
 	})
 	if err != nil {
 		return err
@@ -84,12 +86,13 @@ func Run(ctx context.Context, o Options) error {
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 	go func() { defer wg.Done(); rec.Run(bgCtx) }()
 	go func() { defer wg.Done(); tr.Run(bgCtx, o.Log) }()
 	go func() { defer wg.Done(); a.RunBroadcaster(bgCtx) }()
 	go func() { defer wg.Done(); a.RunMaintenance(bgCtx) }()
 	go func() { defer wg.Done(); a.RunNotifier(bgCtx) }()
+	go func() { defer wg.Done(); a.RunOutages(bgCtx) }()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

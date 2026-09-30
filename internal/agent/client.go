@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -37,7 +38,10 @@ type Client struct {
 	s       Sampler
 	log     *slog.Logger
 	version string
-	country string
+	mu      sync.Mutex
+	net     collect.Network
+	// helloCh 通知当前连接重新发送 hello；容量 1，避免堆积
+	helloCh chan struct{}
 	// filterID 当前已应用到采集器的网卡过滤器摘要；仅由 Run 所在协程访问，跨重连保留（采集器的过滤规则同样保留）
 	filterID string
 }
@@ -48,11 +52,31 @@ func NewClient(cfg Config, s Sampler, log *slog.Logger, version string) (*Client
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cfg: cfg, url: u, s: s, log: log, version: version}, nil
+	return &Client{cfg: cfg, url: u, s: s, log: log, version: version, helloCh: make(chan struct{}, 1)}, nil
 }
 
-// SetCountry 设置随 hello 上报的国家代码
-func (c *Client) SetCountry(cc string) { c.country = cc }
+// SetNetwork 更新国家与公网地址；与当前不同时通知当前连接重新发送 hello（未连接时在下次连接时带上）
+func (c *Client) SetNetwork(n collect.Network) {
+	c.mu.Lock()
+	changed := n != c.net
+	c.net = n
+	c.mu.Unlock()
+	if changed {
+		select {
+		case c.helloCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// hello 组装静态信息
+func (c *Client) hello() proto.Hello {
+	h := c.s.Static(c.version)
+	c.mu.Lock()
+	h.Country, h.IPv4, h.IPv6 = c.net.Country, c.net.IPv4, c.net.IPv6
+	c.mu.Unlock()
+	return h
+}
 
 // Run 保持连接直到 ctx 结束（返回 nil）或收到 stop（返回 ErrStopped）
 func (c *Client) Run(ctx context.Context) error {
@@ -112,9 +136,14 @@ func (c *Client) session(ctx context.Context) error {
 	conn.SetReadLimit(64 << 10)
 	c.log.Info("已连接 Dashboard", "url", c.url)
 
-	hello := c.s.Static(c.version)
-	hello.Country = c.country
-	if err := write(ctx, conn, proto.TypeHello, hello); err != nil {
+	// 丢弃连接建立前可能已排队的重发信号：必须在组装并发送初始 hello 之前清空，
+	// 否则 c.hello() 与本次 drain 之间落地的 SetNetwork 变化会被一并吞掉，
+	// 要等到下一次探测（最长 6 小时）才会补发
+	select {
+	case <-c.helloCh:
+	default:
+	}
+	if err := write(ctx, conn, proto.TypeHello, c.hello()); err != nil {
 		return err
 	}
 
@@ -132,6 +161,10 @@ func (c *Client) session(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-errCh:
 			return err
+		case <-c.helloCh:
+			if err := write(ctx, conn, proto.TypeHello, c.hello()); err != nil {
+				return err
+			}
 		case cfg := <-cfgCh:
 			c.s.SetFilter(collect.Filter{NICInclude: cfg.NICInclude, NICExclude: cfg.NICExclude, MountExclude: cfg.MountExclude})
 			c.filterID = cfg.FilterID

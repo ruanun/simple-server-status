@@ -38,18 +38,20 @@ describe('DetailPage', () => {
       'GET /api/public/servers/srv1/metrics?range=realtime': [point],
       'GET /api/public/servers/srv1/metrics?range=1h': [point, point],
       'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [],
     })
     const user = userEvent.setup()
     renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
 
     expect(await screen.findByRole('heading', { name: 'hk-01' })).toBeInTheDocument()
+    expect(screen.getByText('v4')).toBeInTheDocument()
     expect(screen.getByText('AMD EPYC 7B13 × 4')).toBeInTheDocument()
     expect(screen.getByText('负载 0.50 / 0.40 / 0.30 · 进程 120 · TCP 30')).toBeInTheDocument()
     expect(screen.getByText('每月 1 日重置')).toBeInTheDocument()
     expect(screen.getByText('$ 9.9 / 年付')).toBeInTheDocument()
     // 设置了价格时仍显示到期提醒与日期
     expect(screen.getByText(/天后到期/).parentElement).toHaveTextContent(/天后到期 · .+ 到期/)
-    expect(screen.getByText('Agent 2.0.0')).toBeInTheDocument()
+    expect(screen.queryByText(/Agent/)).not.toBeInTheDocument()
     expect(screen.getByText('/')).toBeInTheDocument()
     expect(await screen.findByTestId('charts')).toHaveTextContent('1')
 
@@ -80,6 +82,7 @@ describe('DetailPage', () => {
       'GET /api/public/servers': [makeServer()],
       'GET /api/public/servers/srv1/metrics?range=realtime': () => ({ status: 400, error: { code: 'bad_range', message: '不支持的时间范围' } }),
       'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [],
     })
     renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
     expect(await screen.findByText('不支持的时间范围')).toBeInTheDocument()
@@ -93,6 +96,7 @@ describe('DetailPage', () => {
       'GET /api/public/servers': [makeServer({ last_seen: now - 5 })],
       'GET /api/public/servers/srv1/metrics?range=realtime': [point],
       'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [],
     })
     renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
 
@@ -106,6 +110,7 @@ describe('DetailPage', () => {
       'GET /api/public/servers': [makeServer({ static: makeHello({ swap_total: 0 }) })],
       'GET /api/public/servers/srv1/metrics?range=realtime': [point],
       'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [],
     })
     renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
     expect(await screen.findByText('在线率 24h 99.8% · 7d 99.5%')).toBeInTheDocument()
@@ -120,9 +125,40 @@ describe('DetailPage', () => {
       'GET /api/public/servers': [makeServer()],
       'GET /api/public/servers/srv1/metrics?range=realtime': [point],
       'GET /api/public/servers/srv1/stats': () => ({ status: 500, error: { code: 'internal', message: '读取每日流量失败' } }),
+      'GET /api/public/servers/srv1/outages': [],
     })
     renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
     expect(await screen.findByText('读取每日流量失败')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'hk-01' })).toBeInTheDocument()
+  })
+
+  it('显示最近离线记录，进行中与无记录状态', async () => {
+    const start = new Date(2026, 8, 28, 3, 12, 0).getTime() / 1000
+    mockFetch({
+      'GET /api/public/site': SITE,
+      'GET /api/public/servers': [makeServer()],
+      'GET /api/public/servers/srv1/metrics?range=realtime': [point],
+      'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [
+        { start_at: start + 3600, end_at: null, duration: 120 },
+        { start_at: start, end_at: start + 480, duration: 480 },
+      ],
+    })
+    renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
+    expect(await screen.findByText('9/28 04:12 · 进行中')).toBeInTheDocument()
+    expect(screen.getByText('9/28 03:12 – 03:20 · 8 分钟')).toBeInTheDocument()
+    expect(screen.getByText(/包含面板自身停机时段/)).toBeInTheDocument()
+  })
+
+  it('没有离线记录时显示提示', async () => {
+    mockFetch({
+      'GET /api/public/site': SITE,
+      'GET /api/public/servers': [makeServer()],
+      'GET /api/public/servers/srv1/metrics?range=realtime': [point],
+      'GET /api/public/servers/srv1/stats': STATS,
+      'GET /api/public/servers/srv1/outages': [],
+    })
+    renderWithProviders(<DetailPage />, { route: '/server/srv1', path: '/server/:id' })
+    expect(await screen.findByText('最近 90 天无离线记录')).toBeInTheDocument()
   })
 })

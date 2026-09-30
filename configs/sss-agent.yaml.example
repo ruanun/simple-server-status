@@ -6,7 +6,7 @@ dashboard: "https://status.example.com"
 # 在 Dashboard 后台创建服务器后获得
 id: "your-server-id"
 secret: "your-secret"
-# 是否通过 Cloudflare trace 探测国家代码
+# 是否通过 Cloudflare trace 探测国家代码与公网 IPv4/IPv6
 detect_country: true
 # 日志级别：debug/info/warn/error
 log_level: "info"

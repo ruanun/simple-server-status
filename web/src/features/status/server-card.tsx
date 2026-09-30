@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
-import { AvailabilityText, ExpiryText, StatusPill } from '@/components/status-bits'
+import { AvailabilityText, ExpiryText, IpBadges, StatusPill } from '@/components/status-bits'
 import { UsageBar } from '@/components/usage-bar'
 import { useLang } from '@/i18n/use-lang'
 import { daysUntil, formatAgo, formatBytes, formatPercent, formatSpeed } from '@/lib/format'
@@ -42,6 +42,7 @@ export function ServerCard({ server: s, now }: { server: ServerView; now: number
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-semibold">{s.name}</span>
           <Flag code={s.country} />
+          <IpBadges v4={s.ipv4} v6={s.ipv6} />
         </div>
         <StatusPill server={s} />
       </div>

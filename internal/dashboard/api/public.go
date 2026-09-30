@@ -16,6 +16,7 @@ func (a *API) registerPublic(r *gin.Engine) {
 	g.GET("/servers/:id", a.publicServer)
 	g.GET("/servers/:id/metrics", a.publicMetrics)
 	g.GET("/servers/:id/stats", a.publicStats)
+	g.GET("/servers/:id/outages", a.publicOutages)
 	g.GET("/ws", a.publicWS)
 }
 

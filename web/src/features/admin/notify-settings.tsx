@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -165,6 +166,9 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
         <div role="status" className="space-y-1">
           {line('Webhook', result.webhook)}
           {line('Telegram', result.telegram)}
+          <Link to="/admin/events?tab=notify" className="text-sm underline underline-offset-2">
+            {t('notify.viewLog')}
+          </Link>
         </div>
       )}
       <div className="flex flex-wrap gap-2">

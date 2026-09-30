@@ -68,7 +68,7 @@ func (a *API) adminNotifyTest(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid_input", "未配置任何通知渠道")
 		return
 	}
-	respond(c, notify.SendTest(c.Request.Context(), cfg, a.NotifyOptions, a.Now()))
+	respond(c, notify.SendTest(c.Request.Context(), cfg, a.NotifyOptions, a.Now(), a.Store))
 }
 
 // Servers 供通知模块读取当前服务器列表
@@ -79,3 +79,6 @@ func (a *API) NotifySettings() store.NotifySettings { return a.currentSettings()
 
 // RunNotifier 运行通知检查与发送，直到 ctx 结束
 func (a *API) RunNotifier(ctx context.Context) { a.notifier.Run(ctx) }
+
+// RunOutages 运行离线记录检查，直到 ctx 结束
+func (a *API) RunOutages(ctx context.Context) { a.outages.Run(ctx) }

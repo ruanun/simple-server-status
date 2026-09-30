@@ -1,12 +1,6 @@
 package collect
 
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-)
+import "testing"
 
 func TestParseTraceLoc(t *testing.T) {
 	cases := map[string]string{
@@ -19,16 +13,5 @@ func TestParseTraceLoc(t *testing.T) {
 		if got := ParseTraceLoc(in); got != want {
 			t.Errorf("ParseTraceLoc(%q) = %q，期望 %q", in, got, want)
 		}
-	}
-}
-
-func TestDetectCountry(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "ip=1.1.1.1\nloc=US\n")
-	}))
-	defer srv.Close()
-	cc, err := DetectCountry(context.Background(), srv.Client(), srv.URL)
-	if err != nil || cc != "US" {
-		t.Fatalf("DetectCountry = %q, %v", cc, err)
 	}
 }

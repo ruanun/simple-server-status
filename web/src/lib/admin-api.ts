@@ -1,5 +1,5 @@
 import { api } from './api'
-import type { AdminServer, NotifySettings, NotifyTestResult, Overview, ServerInput, Settings } from './types'
+import type { AdminOutage, AdminServer, NotifyLogItem, NotifySettings, NotifyTestResult, Overview, Paged, ServerInput, Settings } from './types'
 
 export const adminKeys = {
   servers: ['admin', 'servers'] as const,
@@ -14,6 +14,12 @@ export interface InstallCommands {
 }
 
 const enc = encodeURIComponent
+
+const qs = (o: Record<string, string | number | undefined>) =>
+  Object.entries(o)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${enc(String(v))}`)
+    .join('&')
 
 /** adminApi 管理接口（均需登录） */
 export const adminApi = {
@@ -34,4 +40,8 @@ export const adminApi = {
   exportData: () => api.get<unknown>('/api/admin/export'),
   importData: (file: unknown) => api.post<{ servers: number }>('/api/admin/import', file),
   overview: () => api.get<Overview>('/api/admin/overview'),
+  outages: (q: { server?: string; page: number }) =>
+    api.get<Paged<AdminOutage>>(`/api/admin/outages?${qs({ server_id: q.server, page: q.page, size: 50 })}`),
+  notifyLog: (q: { server?: string; status?: string; page: number }) =>
+    api.get<Paged<NotifyLogItem>>(`/api/admin/notify-log?${qs({ server_id: q.server, status: q.status, page: q.page, size: 50 })}`),
 }

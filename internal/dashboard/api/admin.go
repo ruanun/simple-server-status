@@ -34,6 +34,8 @@ func (a *API) registerAdmin(r *gin.Engine) {
 	g.GET("/admin/export", a.adminExport)
 	g.POST("/admin/import", a.adminImport)
 	g.GET("/admin/overview", a.adminOverview)
+	g.GET("/admin/outages", a.adminOutages)
+	g.GET("/admin/notify-log", a.adminNotifyLog)
 }
 
 // serverInput 后台可编辑的服务器字段
@@ -241,6 +243,7 @@ func (a *API) adminDeleteServer(c *gin.Context) {
 	a.Traffic.Forget(id)
 	a.History.Forget(id)
 	a.notifier.Forget(id)
+	a.outages.Forget(id)
 	respond(c, gin.H{})
 }
 

@@ -15,6 +15,7 @@ func (a *API) refreshUptime(ctx context.Context) {
 		v, err := history.Uptime(ctx, a.Store, s.ID, s.CreatedAt, now, 24*time.Hour)
 		if err != nil {
 			a.Log.Warn("计算在线率失败", "id", s.ID, "err", err)
+			m[s.ID] = a.cachedUptime(s.ID) // 保留上一次的值，避免短暂出错时在线率变为空
 			continue
 		}
 		m[s.ID] = v

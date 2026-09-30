@@ -9,6 +9,8 @@ import {
   formatChartTick,
   formatDateTime,
   formatDuration,
+  formatHM,
+  formatMDHM,
   formatMonthDay,
   formatPercent,
   formatSpeed,
@@ -109,5 +111,13 @@ describe('formatMonthDay', () => {
   it('去掉年份与前导零', () => {
     expect(formatMonthDay('2026-09-01')).toBe('9/1')
     expect(formatMonthDay('2026-12-31')).toBe('12/31')
+  })
+})
+
+describe('formatMDHM / formatHM', () => {
+  it('本地时间的月/日 时:分', () => {
+    const ts = new Date(2026, 8, 28, 3, 12, 0).getTime() / 1000
+    expect(formatMDHM(ts)).toBe('9/28 03:12')
+    expect(formatHM(ts)).toBe('03:12')
   })
 })

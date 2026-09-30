@@ -38,13 +38,31 @@ export default async function globalSetup() {
   execFileSync('go', ['build', '-o', agent, './cmd/sss-agent'], { cwd: REPO, stdio: 'inherit' })
 
   const procs: ChildProcess[] = []
-  procs.push(spawn(dashboard, ['--listen', '127.0.0.1:18990', '--data-dir', path.join(tmp, 'data'), '--admin-password', 'password123'], { cwd: tmp, stdio: 'ignore' }))
+  procs.push(
+    spawn(
+      dashboard,
+      ['--listen', '127.0.0.1:18990', '--data-dir', path.join(tmp, 'data'), '--admin-password', 'password123', '--outage-test-threshold', '4s'],
+      { cwd: tmp, stdio: 'ignore' },
+    ),
+  )
   await waitFor(async () => (await fetch(`${BASE}/api/public/site`)).ok, 30_000, 'Dashboard 启动')
 
   const { token } = await call<{ token: string }>('POST', '/api/auth/login', undefined, { username: 'admin', password: 'password123' })
   const srv = await call<{ id: string; secret: string }>('POST', '/api/admin/servers', token, { name: 'e2e-node', group: 'E2E' })
   procs.push(spawn(agent, ['--dashboard', BASE, '--id', srv.id, '--secret', srv.secret, '--detect-country=false'], { cwd: tmp, stdio: 'ignore' }))
   await waitFor(async () => (await call<{ online: boolean }[]>('GET', '/api/public/servers')).some((s) => s.online), 30_000, 'Agent 上线')
+
+  // 第二台服务器：上线后立即停止，用于验证事件页的「进行中」离线记录
+  const srv2 = await call<{ id: string; secret: string }>('POST', '/api/admin/servers', token, { name: 'e2e-offline', group: 'E2E' })
+  const agent2 = spawn(agent, ['--dashboard', BASE, '--id', srv2.id, '--secret', srv2.secret, '--detect-country=false'], { cwd: tmp, stdio: 'ignore' })
+  procs.push(agent2)
+  await waitFor(
+    async () => (await call<{ online: boolean }[]>('GET', '/api/public/servers')).filter((s) => s.online).length === 2,
+    30_000,
+    '第二个 Agent 上线',
+  )
+  agent2.kill()
+  procs.splice(procs.indexOf(agent2), 1) // 已手动结束，避免清理时重复 kill
 
   return async () => {
     for (const p of procs) p.kill()

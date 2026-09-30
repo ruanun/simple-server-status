@@ -52,6 +52,8 @@ func addServeFlags(fs *pflag.FlagSet) {
 	fs.String("listen", ":8900", "监听地址")
 	fs.StringSlice("trusted-proxies", nil, "可信反向代理的 IP 或 CIDR，逗号分隔")
 	fs.String("admin-password", "", "首次初始化时的管理员密码，留空则随机生成并打印到日志")
+	fs.Duration("outage-test-threshold", 0, "仅测试使用：离线记录门槛")
+	_ = fs.MarkHidden("outage-test-threshold")
 }
 
 func runServe(cmd *cobra.Command, _ []string) error {
@@ -65,6 +67,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	adminPw, _ := fs.GetString("admin-password")
 	level, _ := fs.GetString("log-level")
 	file, _ := fs.GetString("log-file")
+	thr, _ := fs.GetDuration("outage-test-threshold")
 
 	log, closeLog, err := logx.New(level, file)
 	if err != nil {
@@ -76,7 +79,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	defer stop()
 	return dashboard.Run(ctx, dashboard.Options{
 		Listen: listen, DataDir: dataDir, TrustedProxies: proxies, AdminPassword: adminPw,
-		Log: log, Version: version, WebFS: web.FS(),
+		Log: log, Version: version, WebFS: web.FS(), OutageThreshold: thr,
 	})
 }
 

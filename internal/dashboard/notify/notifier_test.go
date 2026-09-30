@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,6 +151,9 @@ func TestNotifierExpireOnceAcrossRestart(t *testing.T) {
 	ctx := context.Background()
 	e.notifier(t).Check(ctx)
 	expectEvent(t, e.events, KindExpire)
+	// 投递成功的回调在 Webhook 响应后才记为已提醒，等其落库再模拟重启
+	key := strconv.FormatInt(exp, 10)
+	waitUntil(t, func() bool { ok, _ := e.st.NotifySent(ctx, "s1", RuleExpire, key); return ok })
 	e.notifier(t).Check(ctx) // 模拟重启：新的 Notifier、同一数据库
 	expectNone(t, e.events)
 }
@@ -224,4 +230,66 @@ func TestNotifierRebaselineWhenChannelsConfigured(t *testing.T) {
 	setHook(hook)
 	n.Check(ctx)
 	expectNone(t, e.events)
+}
+
+func TestExpireRetriedAfterAllChannelsFail(t *testing.T) {
+	exp := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC).Unix()
+	e := newEnv(t, store.Server{ID: "s1", Name: "hk", ExpireAt: &exp})
+	var calls atomic.Int32
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+	e.src.cfg.WebhookURL = bad.URL
+	n := e.notifier(t)
+	ctx := context.Background()
+	n.Check(ctx)
+	waitUntil(t, func() bool { return calls.Load() == 4 }) // 首次 + 3 次重试
+	key := inflightKey("s1", Mark{Rule: RuleExpire, Key: strconv.FormatInt(exp, 10)})
+	waitUntil(t, func() bool { // 等失败记录写入且「处理中」已清除
+		_, total, _ := e.st.ListNotifyLog(ctx, "s1", store.LogFailed, 10, 0)
+		return total == 1 && !n.isInflight(key)
+	})
+	if ok, _ := e.st.NotifySent(ctx, "s1", RuleExpire, strconv.FormatInt(exp, 10)); ok {
+		t.Fatal("全部失败时不应记为已提醒")
+	}
+	logs, _, _ := e.st.ListNotifyLog(ctx, "s1", store.LogFailed, 10, 0)
+	if len(logs) != 1 || logs[0].Error == "" {
+		t.Fatalf("应有一条失败记录 %+v", logs)
+	}
+	if strings.Contains(logs[0].Error, bad.URL) {
+		t.Fatalf("失败原因不应包含 Webhook 地址: %s", logs[0].Error)
+	}
+	n.Check(ctx)
+	waitUntil(t, func() bool { return calls.Load() >= 5 })
+}
+
+func TestInflightNotDuplicatedAndMarkedOnSuccess(t *testing.T) {
+	exp := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC).Unix()
+	e := newEnv(t, store.Server{ID: "s1", Name: "hk", ExpireAt: &exp})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+		<-release
+	}))
+	defer slow.Close()
+	e.src.cfg.WebhookURL = slow.URL
+	n := e.notifier(t)
+	ctx := context.Background()
+	n.Check(ctx)
+	waitUntil(t, func() bool { return calls.Load() == 1 })
+	n.Check(ctx) // 投递进行中，不应重复入队
+	time.Sleep(100 * time.Millisecond)
+	if calls.Load() != 1 {
+		t.Fatalf("进行中不应重复发送，请求 %d 次", calls.Load())
+	}
+	close(release)
+	key := strconv.FormatInt(exp, 10)
+	waitUntil(t, func() bool { ok, _ := e.st.NotifySent(ctx, "s1", RuleExpire, key); return ok })
+	logs, _, _ := e.st.ListNotifyLog(ctx, "s1", store.LogSent, 10, 0)
+	if len(logs) != 1 || logs[0].Kind != KindExpire || logs[0].Channel != "webhook" || logs[0].DoneAt == nil {
+		t.Fatalf("应有一条成功记录 %+v", logs)
+	}
 }

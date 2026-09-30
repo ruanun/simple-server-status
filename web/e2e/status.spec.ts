@@ -6,7 +6,7 @@ test('首页显示在线服务器，可进入详情页并切换时间范围', as
   await page.goto('/')
   const card = page.getByRole('link', { name: /e2e-node/ })
   await expect(card).toBeVisible()
-  await expect(card.getByText(/^在线/)).toBeVisible()
+  await expect(card.getByTitle(/^在线 /)).toBeVisible()
   await card.click()
   await expect(page).toHaveURL(/\/server\//)
   await expect(page.getByRole('heading', { name: 'e2e-node' })).toBeVisible()

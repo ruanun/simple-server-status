@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/ruanun/simple-server-status/internal/dashboard/auth"
+	"github.com/ruanun/simple-server-status/internal/dashboard/captcha"
 	"github.com/ruanun/simple-server-status/internal/dashboard/history"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
 	"github.com/ruanun/simple-server-status/internal/dashboard/notify"
@@ -39,6 +40,10 @@ type Deps struct {
 	NotifyOptions notify.Options
 	// OutageThreshold 离线记录门槛，0 使用默认 60 秒；仅测试缩短
 	OutageThreshold time.Duration
+	// TurnstileURL Turnstile 核验地址，为空使用 Cloudflare 官方地址；仅测试替换
+	TurnstileURL string
+	// CaptchaCode 图形验证码生成函数，为空随机生成；仅测试注入固定值
+	CaptchaCode func() string
 }
 
 // API HTTP 接口集合，缓存服务器列表与设置（修改后立即刷新）
@@ -55,6 +60,9 @@ type API struct {
 	notifier *notify.Notifier
 	outages  *outage.Tracker
 
+	captchas  *captcha.Store
+	turnstile captcha.Turnstile
+
 	upMu        sync.RWMutex
 	uptimeCache map[string]*float64 // 24 小时在线率，每分钟刷新
 
@@ -63,7 +71,8 @@ type API struct {
 
 // New 创建 API 并加载缓存
 func New(ctx context.Context, d Deps) (*API, error) {
-	a := &API{Deps: d, agents: newAgentRegistry()}
+	a := &API{Deps: d, agents: newAgentRegistry(),
+		captchas: captcha.NewStore(d.Now, d.CaptchaCode), turnstile: captcha.Turnstile{URL: d.TurnstileURL}}
 	a.bc = newBroadcaster(a)
 	a.notifier = notify.NewNotifier(a, d.Hub, d.Traffic, d.Store, notify.NewSender(d.NotifyOptions, d.Log), d.NotifyOptions, d.Now, d.Log)
 	a.outages = outage.New(a, d.Hub, d.Store, d.Now, d.Log, d.OutageThreshold)

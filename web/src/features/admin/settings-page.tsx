@@ -26,6 +26,7 @@ import { errorMessage, tokenStore } from '@/lib/api'
 import { downloadJson } from '@/lib/download'
 import type { Settings } from '@/lib/types'
 
+import { CaptchaSettingsForm } from './captcha-settings'
 import { NotifySettingsForm } from './notify-settings'
 
 function Card({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
@@ -208,6 +209,7 @@ function BackupPanel({ onImported }: { onImported: () => void }) {
       await qc.invalidateQueries()
       onImported()
       toast.success(t('settings.importDone', { count: r.servers }))
+      if (r.captcha_kept) toast.warning(t('settings.importCaptchaKept'))
     } catch (err) {
       toast.error(errorMessage(err))
     }
@@ -261,8 +263,8 @@ function isTab(v: string | null): v is Tab {
 export function SettingsPage() {
   const { t } = useTranslation()
   const q = useQuery({ queryKey: adminKeys.settings, queryFn: adminApi.settings })
-  // 表单版本号：仅在导入备份后递增，使两个表单重新挂载以读取导入后的设置；
-  // 单独保存某个表单时不递增，从而不会重置另一个表单里未保存的编辑
+  // 表单版本号：仅在导入备份后递增，使各设置表单重新挂载以读取导入后的设置；
+  // 单独保存某个表单时不递增，从而不会重置其他表单里未保存的编辑
   const [formVersion, setFormVersion] = useState(0)
   const [params, setParams] = useSearchParams()
   const raw = params.get('tab')
@@ -315,6 +317,9 @@ export function SettingsPage() {
         <TabsContent value="account" forceMount className={pane}>
           <Card title={t('settings.password')}>
             <PasswordForm />
+          </Card>
+          <Card title={t('captcha.title')} desc={t('captcha.desc')}>
+            {q.data ? <CaptchaSettingsForm key={formVersion} initial={q.data} /> : <Skeleton className="h-24" />}
           </Card>
         </TabsContent>
         <TabsContent value="backup" forceMount className={pane}>

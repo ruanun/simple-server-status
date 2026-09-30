@@ -45,14 +45,29 @@ func DefaultNotifySettings() NotifySettings {
 	}
 }
 
+// 登录验证码模式
+const (
+	CaptchaNone      = "none"
+	CaptchaImage     = "image"
+	CaptchaTurnstile = "turnstile"
+)
+
+// CaptchaSettings 登录验证码：模式与 Cloudflare Turnstile 密钥（仅 turnstile 模式使用）
+type CaptchaSettings struct {
+	Mode             string `json:"mode"`
+	TurnstileSiteKey string `json:"turnstile_site_key"`
+	TurnstileSecret  string `json:"turnstile_secret"`
+}
+
 // Settings 运行期设置（后台修改后即时生效）
 type Settings struct {
-	SiteTitle             string         `json:"site_title"`
-	ShowPrice             bool           `json:"show_price"`
-	DefaultReportInterval int            `json:"default_report_interval"`
-	InstallScriptBase     string         `json:"install_script_base"`
-	Announcement          string         `json:"announcement"`
-	Notify                NotifySettings `json:"notify"`
+	SiteTitle             string          `json:"site_title"`
+	ShowPrice             bool            `json:"show_price"`
+	DefaultReportInterval int             `json:"default_report_interval"`
+	InstallScriptBase     string          `json:"install_script_base"`
+	Announcement          string          `json:"announcement"`
+	Notify                NotifySettings  `json:"notify"`
+	Captcha               CaptchaSettings `json:"captcha"`
 }
 
 // DefaultSettings 默认设置
@@ -62,6 +77,7 @@ func DefaultSettings() Settings {
 		DefaultReportInterval: 2,
 		InstallScriptBase:     DefaultInstallScriptBase,
 		Notify:                DefaultNotifySettings(),
+		Captcha:               CaptchaSettings{Mode: CaptchaNone},
 	}
 }
 
@@ -94,6 +110,9 @@ func settingFields(st *Settings) []settingField {
 		{"notify_expire_days", &n.ExpireDays},
 		{"notify_traffic_enabled", &n.TrafficEnabled},
 		{"notify_traffic_percent", &n.TrafficPercent},
+		{"captcha_mode", &st.Captcha.Mode},
+		{"captcha_turnstile_site_key", &st.Captcha.TurnstileSiteKey},
+		{"captcha_turnstile_secret", &st.Captcha.TurnstileSecret},
 	}
 }
 

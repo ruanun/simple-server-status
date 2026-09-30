@@ -2,10 +2,10 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { Flag } from '@/components/flag'
-import { AvailabilityText, ExpiryText, IpBadges, StatusPill } from '@/components/status-bits'
+import { AvailabilityText, ExpiryText, OnlineDot } from '@/components/status-bits'
 import { UsageBar } from '@/components/usage-bar'
 import { useLang } from '@/i18n/use-lang'
-import { daysUntil, formatAgo, formatBytes, formatPercent, formatSpeed } from '@/lib/format'
+import { daysUntil, formatAgo, formatBytes, formatDuration, formatPercent, formatSpeed } from '@/lib/format'
 import { cpuPct, diskPct, memPct, osLabel, trafficPct } from '@/lib/server'
 import type { ServerView } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,19 @@ function Metric({ label, extra, value, valueText, detail }: { label: string; ext
   )
 }
 
+/** UptimeText 卡片右上角的状态：在线只显示最高一级时长（悬停看完整时长），离线显示红色「离线」 */
+function UptimeText({ server: s }: { server: ServerView }) {
+  const { t } = useTranslation()
+  const lang = useLang()
+  if (!s.online) return <span className="shrink-0 text-xs text-bad">{t('status.offline')}</span>
+  if (!s.metrics) return <span className="shrink-0 text-xs text-muted-foreground">{t('status.online')}</span>
+  return (
+    <span className="shrink-0 text-xs text-muted-foreground tabular" title={t('status.onlineFor', { duration: formatDuration(s.metrics.uptime, lang) })}>
+      {formatDuration(s.metrics.uptime, lang, true)}
+    </span>
+  )
+}
+
 /** ServerCard 首页卡片：头部状态、2×2 指标、底部网速与累计流量 */
 export function ServerCard({ server: s, now }: { server: ServerView; now: number }) {
   const { t } = useTranslation()
@@ -38,13 +51,15 @@ export function ServerCard({ server: s, now }: { server: ServerView; now: number
       to={`/server/${s.id}`}
       className={cn('block rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:border-foreground/25', !s.online && 'opacity-60')}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-semibold">{s.name}</span>
+          <OnlineDot online={s.online} />
+          <span className="truncate font-semibold" title={s.name}>
+            {s.name}
+          </span>
           <Flag code={s.country} />
-          <IpBadges v4={s.ipv4} v6={s.ipv6} />
         </div>
-        <StatusPill server={s} />
+        <UptimeText server={s} />
       </div>
       <div className="mt-1 flex justify-between gap-2 text-xs text-muted-foreground">
         <span className="truncate">{osLabel(s)}</span>

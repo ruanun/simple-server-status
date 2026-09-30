@@ -17,6 +17,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/crypto v0.31.0
+	golang.org/x/image v0.28.0
 	modernc.org/sqlite v1.44.3
 )
 
@@ -48,7 +49,7 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

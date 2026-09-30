@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { SettingsPage } from './settings-page'
 
 // 备份面板导出/导入涉及敏感操作（导出含 Agent 密钥），toast 提示通过 mock sonner 断言文案，
 // 避免在测试中额外渲染 <Toaster /> 引入动画与 Portal 带来的不确定性。
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const NOTIFY: NotifySettings = {
   webhook_url: '',
@@ -30,7 +30,15 @@ const NOTIFY: NotifySettings = {
   traffic_enabled: true,
   traffic_percent: 90,
 }
-const SETTINGS: Settings = { site_title: 'Simple Server Status', show_price: false, default_report_interval: 2, install_script_base: 'https://example.com/dl', announcement: '', notify: NOTIFY }
+const SETTINGS: Settings = {
+  site_title: 'Simple Server Status',
+  show_price: false,
+  default_report_interval: 2,
+  install_script_base: 'https://example.com/dl',
+  announcement: '',
+  notify: NOTIFY,
+  captcha: { mode: 'none', turnstile_site_key: '', turnstile_secret: '' },
+}
 
 describe('SettingsPage', () => {
   it('修改站点标题并保存', async () => {
@@ -292,7 +300,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<SettingsPage />, { route: '/admin/settings', path: '/admin/settings' })
     expect(await screen.findByRole('tab', { name: '站点' })).toHaveAttribute('aria-selected', 'true')
-    for (const name of ['通知', '账号', '备份']) {
+    for (const name of ['通知', '账号与安全', '备份']) {
       expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'false')
     }
     await user.click(screen.getByRole('tab', { name: '备份' }))
@@ -318,5 +326,59 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('tab', { name: '站点' }))
     await user.click(screen.getByRole('tab', { name: '通知' }))
     expect(screen.getByLabelText('Chat ID')).toHaveValue('42')
+  })
+
+  it('启用图形验证码并保存，不影响其他设置', async () => {
+    let saved: Record<string, unknown> | null = null
+    mockFetch({
+      'GET /api/admin/settings': SETTINGS,
+      'PUT /api/admin/settings': (body: unknown) => {
+        saved = body as Record<string, unknown>
+        return { data: body }
+      },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings?tab=account', path: '/admin/settings' })
+    await user.click(await screen.findByRole('combobox', { name: '验证方式' }))
+    await user.click(await screen.findByRole('option', { name: '图形验证码' }))
+    await user.click(screen.getByRole('button', { name: '保存验证码设置' }))
+    await waitFor(() => expect(saved).toMatchObject({ site_title: 'Simple Server Status', captcha: { mode: 'image' } }))
+    expect(saved).not.toHaveProperty('turnstile_token')
+  })
+
+  it('新启用 Turnstile 时需先完成验证，保存时附带 token', async () => {
+    let onToken: ((t: string) => void) | undefined
+    const render = vi.fn((_el: HTMLElement, opts: { sitekey: string; callback: (t: string) => void }) => {
+      onToken = opts.callback
+      return 'w1'
+    })
+    vi.stubGlobal('turnstile', { render, remove: vi.fn() })
+    let saved: Record<string, unknown> | null = null
+    mockFetch({
+      'GET /api/admin/settings': SETTINGS,
+      'PUT /api/admin/settings': (body: unknown) => {
+        saved = body as Record<string, unknown>
+        return { data: body }
+      },
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings?tab=account', path: '/admin/settings' })
+    await user.click(await screen.findByRole('combobox', { name: '验证方式' }))
+    await user.click(await screen.findByRole('option', { name: 'Cloudflare Turnstile' }))
+    await user.type(screen.getByLabelText('Site Key'), 'site-key')
+    await user.type(screen.getByLabelText('Secret Key'), 'secret-key')
+    const btn = screen.getByRole('button', { name: '保存验证码设置' })
+    expect(btn).toBeDisabled()
+    await waitFor(() => expect(render).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({ sitekey: 'site-key' })))
+    act(() => onToken?.('tok-1'))
+    await waitFor(() => expect(btn).toBeEnabled())
+    await user.click(btn)
+    await waitFor(() =>
+      expect(saved).toMatchObject({
+        captcha: { mode: 'turnstile', turnstile_site_key: 'site-key', turnstile_secret: 'secret-key' },
+        turnstile_token: 'tok-1',
+      }),
+    )
+    vi.unstubAllGlobals()
   })
 })

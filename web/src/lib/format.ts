@@ -27,15 +27,15 @@ export function formatPercent(p: number): string {
   return `${Math.round(p)}%`
 }
 
-/** formatDuration 把秒数格式化为最多两级的时长 */
-export function formatDuration(seconds: number, lang: Lang): string {
+/** formatDuration 把秒数格式化为最多两级的时长；short 为 true 时只保留最高一级（如"63 天"） */
+export function formatDuration(seconds: number, lang: Lang, short = false): string {
   const s = Math.max(0, Math.floor(seconds))
   const d = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
   const m = Math.floor((s % 3600) / 60)
   const zh = lang === 'zh-CN'
-  if (d > 0) return zh ? `${d} 天${h > 0 ? ` ${h} 小时` : ''}` : `${d}d${h > 0 ? ` ${h}h` : ''}`
-  if (h > 0) return zh ? `${h} 小时${m > 0 ? ` ${m} 分` : ''}` : `${h}h${m > 0 ? ` ${m}m` : ''}`
+  if (d > 0) return zh ? `${d} 天${h > 0 && !short ? ` ${h} 小时` : ''}` : `${d}d${h > 0 && !short ? ` ${h}h` : ''}`
+  if (h > 0) return zh ? `${h} 小时${m > 0 && !short ? ` ${m} 分` : ''}` : `${h}h${m > 0 && !short ? ` ${m}m` : ''}`
   return zh ? `${m} 分钟` : `${m}m`
 }
 

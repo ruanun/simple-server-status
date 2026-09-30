@@ -18,6 +18,7 @@ import (
 
 func (a *API) registerAdmin(r *gin.Engine) {
 	r.POST("/api/auth/login", a.login)
+	r.GET("/api/auth/captcha", a.captchaChallenge)
 	g := r.Group("/api", a.requireAuth())
 	g.GET("/auth/me", a.me)
 	g.PUT("/auth/password", a.changePassword)
@@ -362,6 +363,9 @@ func normalizeSettings(st *store.Settings) error {
 	if utf8.RuneCountInString(st.Announcement) > 1000 {
 		return errors.New("公告不超过 1000 个字符")
 	}
+	if err := normalizeCaptcha(&st.Captcha); err != nil {
+		return err
+	}
 	return normalizeNotify(&st.Notify)
 }
 
@@ -369,14 +373,24 @@ func (a *API) adminGetSettings(c *gin.Context) {
 	respond(c, a.currentSettings())
 }
 
+// saveSettingsReq 保存设置的请求体：设置本身，外加新启用 Turnstile 时用于确认密钥可用的 token
+type saveSettingsReq struct {
+	store.Settings
+	TurnstileToken string `json:"turnstile_token"`
+}
+
 func (a *API) adminSaveSettings(c *gin.Context) {
-	st := store.DefaultSettings()
-	if err := c.ShouldBindJSON(&st); err != nil {
+	req := saveSettingsReq{Settings: store.DefaultSettings()}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "bad_request", "请求格式错误")
 		return
 	}
+	st := req.Settings
 	if err := normalizeSettings(&st); err != nil {
 		fail(c, http.StatusBadRequest, "invalid_input", err.Error())
+		return
+	}
+	if !a.checkTurnstileOnSave(c, st.Captcha, req.TurnstileToken) {
 		return
 	}
 	if err := a.Store.SaveSettings(c.Request.Context(), st); err != nil {

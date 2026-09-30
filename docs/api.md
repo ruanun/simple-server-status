@@ -26,10 +26,14 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `bad_version` | 400 | 导入文件的 `version` 不受支持 |
 | `wrong_password` | 400 | 修改密码时原密码错误 |
 | `weak_password` | 400 | 新密码少于 8 位 |
+| `captcha_invalid` | 400 | 登录时验证码错误、已过期或未提交 |
+| `turnstile_check_failed` | 400 | 保存设置时 Turnstile 核验未通过，`message` 说明原因 |
 | `unauthorized` | 401 | 未登录、token 无效或已失效；Agent 鉴权失败 |
 | `invalid_credentials` | 401 | 用户名或密码错误 |
 | `not_found` | 404 | 服务器不存在，或接口不存在 |
 | `too_many_attempts` | 429 | 登录失败次数过多 |
+| `login_busy` | 429 | 全站登录尝试过多，暂时拒绝近期未成功登录过的来源 |
+| `captcha_rate_limited` | 429 | 同一来源获取验证码过于频繁 |
 | `internal` | 500 | 服务器内部错误 |
 | `shutting_down` | 503 | 服务正在停止，拒绝新的 WebSocket 连接 |
 
@@ -37,7 +41,14 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 
 - `POST /api/auth/login` 返回 JWT（HS256，有效期 7 天），之后在请求头携带 `Authorization: Bearer <token>`。
 - 修改密码或执行 `reset-password` 后，之前签发的 token 全部失效。
-- 登录限流：同一客户端 IP 5 分钟内失败 5 次后锁定 5 分钟。位于反向代理之后时需配置 `--trusted-proxies`，否则所有请求共用代理的 IP。
+- 登录限流：
+  - 同一来源 5 分钟内失败 5 次后锁定 5 分钟。来源按 IPv4 地址或 IPv6 的 /64 网段区分。
+  - 近期（30 天内）未成功登录过的来源，5 分钟内合计尝试超过 30 次后，暂时拒绝这些来源（`login_busy`），防止换 IP 爆破；成功登录过的来源不受影响。以上记录保存在内存中，重启后清空。
+  - 位于反向代理之后时需配置 `--trusted-proxies`，否则所有请求共用代理的 IP。
+- 登录验证码：在后台「设置 → 账号与安全」中选择不启用、图形验证码或 Cloudflare Turnstile。启用后，登录页先调用 `GET /api/auth/captcha` 获取验证码，并随登录请求提交。验证码在限流之后校验，填错验证码同样计为一次登录失败。
+  - 图形验证码保存在内存中，5 分钟内有效，无论对错只能使用一次，不区分大小写。同一来源每分钟最多获取 20 次，超出返回 `captcha_rate_limited`。
+  - Turnstile 的 token 由 Dashboard 调用 Cloudflare 核验，因此 Dashboard 需要能访问 `challenges.cloudflare.com`。
+  - 验证码配置有误导致无法登录时，执行 `sss-dashboard disable-captcha` 关闭验证码并重启 Dashboard。
 - 公开接口不要求登录；携带有效 token 时可以看到隐藏服务器与价格。
 
 ## 公开接口
@@ -109,11 +120,12 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 
 ## 登录与管理接口
 
-除 `POST /api/auth/login` 外均需要 `Authorization: Bearer <token>`。
+除 `POST /api/auth/login` 与 `GET /api/auth/captcha` 外均需要 `Authorization: Bearer <token>`。
 
 | 方法 | 路径 | 请求 | 响应 `data` |
 |---|---|---|---|
-| POST | `/api/auth/login` | `{"username", "password"}` | `{"token", "username"}` |
+| POST | `/api/auth/login` | `{"username", "password"}`；启用图形验证码时加 `captcha_id`、`captcha_code`，启用 Turnstile 时加 `turnstile_token` | `{"token", "username"}` |
+| GET | `/api/auth/captcha` | — | 未启用：`{"mode": "none"}`；图形验证码：`{"mode": "image", "id", "image"}`（`image` 为 PNG 的 data URL，每次调用生成新的验证码）；Turnstile：`{"mode": "turnstile", "site_key"}` |
 | GET | `/api/auth/me` | — | `{"username", "version"}`（`version` 为 Dashboard 版本，仅登录后可见） |
 | PUT | `/api/auth/password` | `{"old_password", "new_password"}` | `{"token"}`（新 token，旧 token 失效） |
 | GET | `/api/admin/servers` | — | `Server` 数组，每项额外带 `online`、`agent_version`（当前连接或最近一次连接的 Agent 版本，未连接过为空）、`outdated`（Agent 版本低于 Dashboard 版本；任一方不是正式发布版本号时为 `false`）、`uptime_24h`（同 `ServerView`） |
@@ -124,10 +136,10 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | GET | `/api/admin/servers/:id/install?dashboard=<面板地址>` | — | `{"linux", "windows"}` 两条安装命令 |
 | PUT | `/api/admin/server-order` | `{"ids": [...]}` | `{}`；按数组顺序设置 `sort` |
 | GET | `/api/admin/settings` | — | `Settings` |
-| PUT | `/api/admin/settings` | `Settings` | 保存后的 `Settings` |
+| PUT | `/api/admin/settings` | `Settings`；新启用 Turnstile 或修改其密钥时加 `turnstile_token`（见下文） | 保存后的 `Settings` |
 | POST | `/api/admin/notify/test` | `NotifySettings` | `{"webhook": "ok" \| 错误信息 \| null, "telegram": ...}`，见下文；每个已启用渠道都会写入一条通知记录 |
 | GET | `/api/admin/export` | — | 导出文件（见下文） |
-| POST | `/api/admin/import` | 导出文件 | `{"servers": <导入数量>}` |
+| POST | `/api/admin/import` | 导出文件 | `{"servers": <导入数量>, "captcha_kept": <是否保留了当前验证码设置>}` |
 | GET | `/api/admin/overview` | — | `{"monthly_cost": [...], "expiring": [...]}`，见下文 |
 | GET | `/api/admin/outages` | 查询参数：`server_id`（可选）、`page`、`size` | `{"items": [AdminOutage, ...], "total": N}`，见下文 |
 | GET | `/api/admin/notify-log` | 查询参数：`server_id`（可选）、`status`（可选，`pending`/`sent`/`failed`）、`page`、`size` | `{"items": [NotifyLog, ...], "total": N}`，见下文 |
@@ -171,7 +183,8 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
     "load_enabled": true, "load_cpu": 90, "load_mem": 90, "load_disk": 90, "load_minutes": 5,
     "expire_enabled": true, "expire_days": 7,
     "traffic_enabled": true, "traffic_percent": 90
-  }
+  },
+  "captcha": { "mode": "none", "turnstile_site_key": "", "turnstile_secret": "" }
 }
 ```
 
@@ -188,6 +201,8 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `load_enabled`、`load_cpu`、`load_mem`、`load_disk`、`load_minutes` | bool、number | `true`、`90`、`90`、`90`、`5` | 阈值 1–100，分钟 1–10 | CPU / 内存 / 硬盘任一项最近该分钟数内平均值达到阈值即通知，全部回落后通知恢复 |
 | `expire_enabled`、`expire_days` | bool、number | `true`、`7` | 天 1–90 | 距到期不超过该天数时通知一次；每个到期日只提醒一次 |
 | `traffic_enabled`、`traffic_percent` | bool、number | `true`、`90` | 百分比 1–100 | 本计费周期流量用量达到该比例时通知一次；每个计费周期只提醒一次 |
+
+`captcha`（`CaptchaSettings`）：`mode` 为 `none`（默认）、`image` 或 `turnstile`；`turnstile_site_key`、`turnstile_secret` 为 Cloudflare Turnstile 的 Site Key 与 Secret Key，`mode` 为 `turnstile` 时必填。`turnstile_secret` 与 `telegram_token` 一样属于敏感信息，公开接口不返回。新启用 Turnstile 或修改其密钥时，请求体需额外带上 `turnstile_token`：前端用新的 Site Key 完成一次验证得到的 token。Dashboard 用新的 Secret Key 核验通过后才会保存，以确认密钥与域名配置正确；核验失败返回 `turnstile_check_failed`。
 
 保存 `Settings` 时的校验：`webhook_url` 为空或 `http(s)` 地址；`telegram_token` 与 `telegram_chat_id` 需同时为空或同时非空；上表阈值需在取值范围内；`announcement` ≤ 1000 字符。违规返回 `invalid_input`，`message` 说明具体字段。
 
@@ -240,7 +255,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 {"version": 1, "exported_at": 1790000000, "settings": {...}, "servers": [Server, ...]}
 ```
 
-包含全部服务器的 `secret`、`note`、`notify_muted`，以及 `settings` 中的 `announcement` 与全部 `notify` 字段（含 Telegram Token）；不包含静态信息、最后在线 IP 与时间、历史数据和流量。导入时按 `id` 覆盖已有服务器、新增不存在的服务器，并用文件中的设置覆盖当前设置；密钥发生变化的服务器会断开旧连接。导出文件版本固定为 1；导入旧版本文件中缺少的字段取默认值。
+包含全部服务器的 `secret`、`note`、`notify_muted`，以及 `settings` 中的 `announcement`、全部 `notify` 字段（含 Telegram Token）与 `captcha` 字段（含 Turnstile Secret Key）；不包含静态信息、最后在线 IP 与时间、历史数据和流量。导入时按 `id` 覆盖已有服务器、新增不存在的服务器，并用文件中的设置覆盖当前设置。例外是文件中的 Turnstile 配置与当前不同时：它没有在当前域名下核验过，直接启用可能导致无法登录，因此保留当前的验证码设置，并在响应中返回 `"captcha_kept": true`；密钥发生变化的服务器会断开旧连接。导出文件版本固定为 1；导入旧版本文件中缺少的字段取默认值。
 
 ## 浏览器 WebSocket
 

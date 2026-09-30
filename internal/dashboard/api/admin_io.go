@@ -44,6 +44,13 @@ func (a *API) adminImport(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
+	// 文件中新的 Turnstile 配置未经核验（Site Key 可能绑定的是旧域名），直接启用可能导致无法登录，
+	// 因此保留当前的验证码设置，由管理员导入后在设置页重新配置
+	captchaKept := false
+	if f.Settings.Captcha.Mode == store.CaptchaTurnstile && !sameTurnstile(a.currentSettings().Captcha, f.Settings.Captcha) {
+		f.Settings.Captcha = a.currentSettings().Captcha
+		captchaKept = true
+	}
 	for i := range f.Servers {
 		s := &f.Servers[i]
 		if s.ID == "" || s.Secret == "" {
@@ -80,5 +87,5 @@ func (a *API) adminImport(c *gin.Context) {
 	for _, s := range f.Servers {
 		a.pushConfig(s.ID)
 	}
-	respond(c, gin.H{"servers": len(f.Servers)})
+	respond(c, gin.H{"servers": len(f.Servers), "captcha_kept": captchaKept})
 }

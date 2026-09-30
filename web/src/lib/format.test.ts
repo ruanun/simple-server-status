@@ -50,6 +50,8 @@ describe('formatDuration', () => {
     expect(formatDuration(86400, 'zh-CN')).toBe('1 天')
     expect(formatDuration(2 * 3600 + 3 * 60, 'zh-CN')).toBe('2 小时 3 分')
     expect(formatDuration(59, 'zh-CN')).toBe('0 分钟')
+    expect(formatDuration(63 * 86400 + 10 * 3600, 'zh-CN', true)).toBe('63 天')
+    expect(formatDuration(2 * 3600 + 3 * 60, 'zh-CN', true)).toBe('2 小时')
   })
   it('英文缩写', () => {
     expect(formatDuration(23 * 86400 + 5 * 3600, 'en-US')).toBe('23d 5h')

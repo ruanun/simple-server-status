@@ -12,9 +12,8 @@ import { Switch } from '@/components/ui/switch'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
 import type { NotifySettings, NotifyTestResult, Settings } from '@/lib/types'
+import { NO_AUTOFILL } from '@/lib/utils'
 
-// 渠道配置不是登录凭据：阻止浏览器及 1Password、LastPass、Bitwarden 把已保存的后台账号密码填入
-const NO_AUTOFILL = { 'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '' }
 
 type NumKey = 'offline_minutes' | 'load_cpu' | 'load_mem' | 'load_disk' | 'load_minutes' | 'expire_days' | 'traffic_percent'
 type BoolKey = 'offline_enabled' | 'load_enabled' | 'expire_enabled' | 'traffic_enabled'

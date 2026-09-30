@@ -41,3 +41,29 @@ func TestBootstrapAdminAndResetPassword(t *testing.T) {
 		t.Fatalf("重置后密码或 token 版本错误: %+v", u)
 	}
 }
+
+func TestDisableCaptcha(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.DefaultSettings()
+	s.SiteTitle = "keep"
+	s.Captcha = store.CaptchaSettings{Mode: store.CaptchaTurnstile, TurnstileSiteKey: "site", TurnstileSecret: "secret"}
+	if err := st.SaveSettings(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+
+	if err := DisableCaptcha(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = store.Open(filepath.Join(dir, DBFile))
+	defer st.Close()
+	got, _ := st.GetSettings(ctx)
+	if got.Captcha.Mode != store.CaptchaNone || got.SiteTitle != "keep" || got.Captcha.TurnstileSiteKey != "site" {
+		t.Fatalf("应只关闭验证码、保留其他设置: %+v", got)
+	}
+}

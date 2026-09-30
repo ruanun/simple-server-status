@@ -12,6 +12,7 @@ Dashboard 与 Agent 的启动参数都可以用环境变量设置：变量名为
 |---|---|
 | `serve` | 启动面板服务，不写子命令时默认执行 |
 | `reset-password` | 为 `admin` 生成新的随机密码并打印，已登录的会话全部失效 |
+| `disable-captcha` | 关闭登录验证码，用于验证码配置有误无法登录时；Dashboard 正在运行时需重启后生效 |
 | `version` | 显示版本 |
 
 参数：

@@ -70,3 +70,13 @@ docker exec sss-dashboard /app/sss-dashboard reset-password
 # 二进制部署（以运行服务的用户执行，--data-dir 与运行时一致）
 sudo -u sss /usr/local/bin/sss-dashboard reset-password --data-dir /var/lib/sss
 ```
+
+如果是登录验证码配置有误（例如 Turnstile 密钥失效）导致无法登录，用 `disable-captcha` 关闭验证码，再重启 Dashboard：
+
+```bash
+# Docker
+docker exec sss-dashboard /app/sss-dashboard disable-captcha && docker restart sss-dashboard
+
+# 二进制部署
+sudo -u sss /usr/local/bin/sss-dashboard disable-captcha --data-dir /var/lib/sss && sudo systemctl restart sss-dashboard
+```

@@ -124,6 +124,14 @@ export interface NotifyTestResult {
   telegram: string | null
 }
 
+export type CaptchaMode = 'none' | 'image' | 'turnstile'
+
+export interface CaptchaSettings {
+  mode: CaptchaMode
+  turnstile_site_key: string
+  turnstile_secret: string
+}
+
 export interface Settings {
   site_title: string
   show_price: boolean
@@ -131,6 +139,18 @@ export interface Settings {
   install_script_base: string
   announcement: string
   notify: NotifySettings
+  captcha: CaptchaSettings
+}
+
+/** CaptchaChallenge 登录页的验证码：图形验证码带 id 与图片，Turnstile 带 Site Key */
+export type CaptchaChallenge = { mode: 'none' } | { mode: 'image'; id: string; image: string } | { mode: 'turnstile'; site_key: string }
+
+export interface LoginInput {
+  username: string
+  password: string
+  captcha_id?: string
+  captcha_code?: string
+  turnstile_token?: string
 }
 
 export interface ServerInput {

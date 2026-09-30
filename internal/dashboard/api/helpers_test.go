@@ -50,7 +50,8 @@ type testEnv struct {
 	clock *fakeClock
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+// newTestEnv 创建测试环境；opts 可在创建 API 前调整依赖（如替换 Turnstile 核验地址）
+func newTestEnv(t *testing.T, opts ...func(*Deps)) *testEnv {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -59,7 +60,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(func() { _ = st.Close() })
 	clock := &fakeClock{t: time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)}
 	log := slog.New(slog.DiscardHandler)
-	a, err := New(context.Background(), Deps{
+	d := Deps{
 		Store:   st,
 		Hub:     hub.New(clock.Now),
 		History: history.NewRecorder(st, clock.Now, log),
@@ -68,7 +69,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		Limiter: auth.NewLimiter(clock.Now),
 		Log:     log,
 		Now:     clock.Now,
-	})
+	}
+	for _, o := range opts {
+		o(&d)
+	}
+	a, err := New(context.Background(), d)
 	if err != nil {
 		t.Fatal(err)
 	}

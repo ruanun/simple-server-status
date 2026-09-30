@@ -41,10 +41,11 @@ func newRootCmd() *cobra.Command {
 	serve := &cobra.Command{Use: "serve", Short: "启动面板服务（默认）", RunE: runServe}
 	addServeFlags(serve.Flags())
 	reset := &cobra.Command{Use: "reset-password", Short: "重置 admin 密码并使已登录会话失效", RunE: runResetPassword}
+	noCaptcha := &cobra.Command{Use: "disable-captcha", Short: "关闭登录验证码（验证码配置有误无法登录时使用）", RunE: runDisableCaptcha}
 	ver := &cobra.Command{Use: "version", Short: "显示版本", Run: func(cmd *cobra.Command, _ []string) {
 		fmt.Fprintln(cmd.OutOrStdout(), version)
 	}}
-	root.AddCommand(serve, reset, ver)
+	root.AddCommand(serve, reset, noCaptcha, ver)
 	return root
 }
 
@@ -94,5 +95,18 @@ func runResetPassword(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "admin 新密码：%s\n", pw)
+	return nil
+}
+
+func runDisableCaptcha(cmd *cobra.Command, _ []string) error {
+	fs := cmd.Flags()
+	if err := cliutil.ApplyEnv(fs, "SSS"); err != nil {
+		return err
+	}
+	dataDir, _ := fs.GetString("data-dir")
+	if err := dashboard.DisableCaptcha(cmd.Context(), dataDir); err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "已关闭登录验证码；如果 Dashboard 正在运行，请重启后生效")
 	return nil
 }

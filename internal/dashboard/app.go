@@ -165,3 +165,19 @@ func ResetPassword(ctx context.Context, dataDir string) (string, error) {
 	}
 	return pw, st.SetPassword(ctx, u.ID, hash)
 }
+
+// DisableCaptcha 关闭登录验证码（验证码配置有误导致无法登录时使用）；
+// 运行中的 Dashboard 缓存了设置，需重启后生效
+func DisableCaptcha(ctx context.Context, dataDir string) error {
+	st, err := store.Open(filepath.Join(dataDir, DBFile))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	s, err := st.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	s.Captcha.Mode = store.CaptchaNone
+	return st.SaveSettings(ctx, s)
+}

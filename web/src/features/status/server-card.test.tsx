@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { makeMetrics, makeServer } from '@/test/fixtures'
@@ -16,7 +16,8 @@ describe('ServerCard', () => {
     expect(screen.getByText('hk-01')).toBeInTheDocument()
     expect(screen.getByText('debian 12 · kvm · x86_64')).toBeInTheDocument()
     expect(screen.getByText('3 天后到期')).toHaveClass('text-warn')
-    expect(screen.getByText('在线 3 天 2 小时')).toBeInTheDocument()
+    expect(screen.getByText('3 天')).toHaveAttribute('title', '在线 3 天 2 小时')
+    expect(screen.getByText('hk-01')).toHaveAttribute('title', 'hk-01')
     expect(screen.getByText('12%')).toBeInTheDocument()
     expect(screen.getByText('50%')).toBeInTheDocument()
     expect(screen.getByText('400 GB / 1.0 TB')).toBeInTheDocument()
@@ -46,15 +47,9 @@ describe('ServerCard', () => {
     expect(cpuBar.firstElementChild).toHaveClass('bg-bad')
   })
 
-  it('显示 IPv4 / IPv6 支持标记，都不支持时不显示', () => {
-    // renderWithProviders 的返回值虽含 rerender，但它会丢失手动拼装的路由等上下文
-    // （RTL 的 rerender 只替换根节点，不会重新套 Provider），因此改为分别渲染两次
+  it('卡片不显示 IPv4 / IPv6 标记（只在详情页显示）', () => {
     renderWithProviders(<ServerCard server={makeServer({ ipv4: true, ipv6: true })} now={0} />)
-    expect(screen.getByText('v4')).toBeInTheDocument()
-    expect(screen.getByText('v6')).toBeInTheDocument()
-    expect(screen.getByText('支持 IPv4')).toHaveClass('sr-only')
-    cleanup()
-    renderWithProviders(<ServerCard server={makeServer({ ipv4: false, ipv6: false })} now={0} />)
     expect(screen.queryByText('v4')).not.toBeInTheDocument()
+    expect(screen.queryByText('v6')).not.toBeInTheDocument()
   })
 })

@@ -8,6 +8,7 @@ import (
 
 func TestRender(t *testing.T) {
 	exp := time.Date(2026, 10, 3, 0, 0, 0, 0, time.Local).Unix()
+	boot := time.Date(2026, 10, 3, 8, 30, 0, 0, time.Local).Unix()
 	cases := []struct {
 		e     Event
 		lang  string
@@ -17,8 +18,14 @@ func TestRender(t *testing.T) {
 		{Event{Kind: KindOffline, ServerName: "hk", Minutes: 75}, "zh-CN", "[离线] hk", "服务器 hk 已离线 1 小时 15 分钟"},
 		{Event{Kind: KindOffline, ServerName: "hk", Minutes: 5}, "en-US", "[Offline] hk", "Server hk has been offline for 5m"},
 		{Event{Kind: KindRecovered, ServerName: "hk", Minutes: 60}, "zh-CN", "[恢复] hk", "服务器 hk 已恢复在线，离线约 1 小时"},
-		{Event{Kind: KindLoad, ServerName: "hk", Minutes: 5, Loads: []LoadValue{{"cpu", 95}, {"mem", 92.1}}}, "zh-CN", "[高负载] hk", "服务器 hk 最近 5 分钟平均负载过高：CPU 95.0%、内存 92.1%"},
-		{Event{Kind: KindLoadRecovered, ServerName: "hk", Minutes: 5}, "en-US", "[Load recovered] hk", "Server hk load is back to normal over the last 5 minutes"},
+		{Event{Kind: KindLoad, ServerName: "hk", Minutes: 5, Load: LoadValue{"mem", 92.1}}, "zh-CN", "[高负载] hk", "服务器 hk 最近 5 分钟平均负载过高：内存 92.1%"},
+		{Event{Kind: KindLoad, ServerName: "hk", Minutes: 5, Load: LoadValue{"cpu", 95}}, "en-US", "[High load] hk", "Server hk has high average load over the last 5 minutes: CPU 95.0%"},
+		{Event{Kind: KindLoadRecovered, ServerName: "hk", Minutes: 5, Load: LoadValue{"cpu", 0}}, "en-US", "[Load recovered] hk", "Server hk CPU load is back to normal over the last 5 minutes"},
+		{Event{Kind: KindLoadRecovered, ServerName: "hk", Minutes: 5, Load: LoadValue{"mem", 0}}, "zh-CN", "[负载恢复] hk", "服务器 hk 最近 5 分钟的内存负载已恢复正常"},
+		{Event{Kind: KindReboot, ServerName: "hk", BootAt: boot}, "zh-CN", "[重启] hk", "服务器 hk 已重启，开机时间 2026-10-03 08:30:00"},
+		{Event{Kind: KindReboot, ServerName: "hk", BootAt: boot}, "en-US", "[Rebooted] hk", "Server hk has rebooted, booted at 2026-10-03 08:30:00"},
+		{Event{Kind: KindIPChange, ServerName: "hk", IPs: map[string][2]string{"ipv6": {"::1", "::2"}, "ipv4": {"1.1.1.1", "2.2.2.2"}}}, "zh-CN", "[IP 变化] hk", "服务器 hk 的公网地址已变化：IPv4 1.1.1.1 → 2.2.2.2、IPv6 ::1 → ::2"},
+		{Event{Kind: KindIPChange, ServerName: "hk", IPs: map[string][2]string{"ipv4": {"1.1.1.1", "2.2.2.2"}}}, "en-US", "[IP changed] hk", "Server hk public address changed: IPv4 1.1.1.1 → 2.2.2.2"},
 		{Event{Kind: KindExpire, ServerName: "hk", Days: 4, ExpireAt: exp}, "zh-CN", "[即将到期] hk", "服务器 hk 将在 4 天后到期（2026-10-03）"},
 		{Event{Kind: KindExpire, ServerName: "hk", Days: 0, ExpireAt: exp}, "en-US", "[Expired] hk", "Server hk expired on 2026-10-03"},
 		{Event{Kind: KindExpire, ServerName: "hk", Days: -3, ExpireAt: exp}, "zh-CN", "[已到期] hk", "服务器 hk 已于 2026-10-03 到期"},

@@ -152,9 +152,9 @@ func TestPublicWSSnapshotAndDelta(t *testing.T) {
 	}
 
 	e.api.Hub.Connect(s.ID, 2)
-	e.api.handleReport(ctx, s.ID, proto.Report{CPU: 77})
+	e.api.handleReport(ctx, s.ID, proto.Report{CPU: 77}, false)
 	e.api.Hub.Connect(h.ID, 2)
-	e.api.handleReport(ctx, h.ID, proto.Report{CPU: 1})
+	e.api.handleReport(ctx, h.ID, proto.Report{CPU: 1}, false)
 	e.api.bc.tick(ctx)
 
 	typ, list = readWS(t, conn)
@@ -286,7 +286,7 @@ func TestPublicViewHidesFilterID(t *testing.T) {
 	e := newTestEnv(t)
 	s := e.addServer(store.Server{Name: "a"})
 	e.api.Hub.Connect(s.ID, 2)
-	e.api.handleReport(context.Background(), s.ID, proto.Report{CPU: 1, FilterID: "abc123"})
+	e.api.handleReport(context.Background(), s.ID, proto.Report{CPU: 1, FilterID: "abc123"}, false)
 	_, body := e.do("GET", "/api/public/servers", "", nil)
 	if bytes.Contains(body, []byte("filter_id")) {
 		t.Fatalf("公开响应不应包含 filter_id: %s", body)

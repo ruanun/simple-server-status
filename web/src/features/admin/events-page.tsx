@@ -11,12 +11,54 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLang } from '@/i18n/use-lang'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
-import { formatDateTime, formatDuration } from '@/lib/format'
-import type { NotifyLogStatus } from '@/lib/types'
+import { formatDateTime, formatDuration, type Lang } from '@/lib/format'
+import type { AdminEvent, EventKind, NotifyLogStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 50
 const ALL = '__all'
+
+// 类型筛选：网址中的 type 对应接口的 kind（负载合为一项）
+const TYPE_FILTERS = { offline: 'offline', load: 'load_cpu,load_mem,load_disk', reboot: 'reboot', ip_change: 'ip_change' } as const
+type TypeFilter = keyof typeof TYPE_FILTERS
+
+function isTypeFilter(v: string): v is TypeFilter {
+  return v in TYPE_FILTERS
+}
+
+const INSTANT: EventKind[] = ['reboot', 'ip_change']
+
+const KIND_DOT: Record<EventKind, string> = {
+  offline: 'bg-bad',
+  load_cpu: 'bg-warn',
+  load_mem: 'bg-warn',
+  load_disk: 'bg-warn',
+  reboot: 'bg-muted-foreground',
+  ip_change: 'bg-muted-foreground',
+}
+
+/** EventDetailText 按类型格式化事件详情 */
+function EventDetailText({ e, lang }: { e: AdminEvent; lang: Lang }) {
+  const { t } = useTranslation()
+  const d = e.detail
+  switch (e.kind) {
+    case 'load_cpu':
+    case 'load_mem':
+    case 'load_disk':
+      return t('events.loadDetail', { peak: (d.peak ?? 0).toFixed(1), threshold: d.threshold, minutes: d.minutes })
+    case 'reboot':
+      return d.boot_at ? t('events.bootAt', { time: formatDateTime(d.boot_at, lang) }) : ''
+    case 'ip_change':
+      return (['ipv4', 'ipv6'] as const)
+        .flatMap((k) => {
+          const v = d[k]
+          return v ? [`${k === 'ipv4' ? 'IPv4' : 'IPv6'} ${v[0]} → ${v[1]}`] : []
+        })
+        .join('; ')
+    default:
+      return ''
+  }
+}
 
 function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
   const { t } = useTranslation()
@@ -34,14 +76,16 @@ function Pager({ page, total, onPage }: { page: number; total: number; onPage: (
   )
 }
 
-/** EventsPage 后台事件：离线记录与通知记录，筛选与分页写入网址 */
+/** EventsPage 后台事件：事件与通知记录，筛选与分页写入网址 */
 export function EventsPage() {
   const { t } = useTranslation()
   const lang = useLang()
   const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'notify' ? 'notify' : 'outages'
+  const tab = params.get('tab') === 'notify' ? 'notify' : 'events'
   const server = params.get('server') ?? ''
   const status = params.get('status') ?? ''
+  const rawType = params.get('type') ?? ''
+  const type = isTypeFilter(rawType) ? rawType : ''
   const page = Math.max(1, Number(params.get('page')) || 1)
   const [open, setOpen] = useState<number | null>(null)
 
@@ -59,10 +103,10 @@ export function EventsPage() {
     )
 
   const servers = useQuery({ queryKey: adminKeys.servers, queryFn: adminApi.servers })
-  const outages = useQuery({
-    queryKey: ['admin', 'outages', server, page],
-    queryFn: () => adminApi.outages({ server, page }),
-    enabled: tab === 'outages',
+  const events = useQuery({
+    queryKey: ['admin', 'events', server, type, page],
+    queryFn: () => adminApi.events({ server, kind: type ? TYPE_FILTERS[type] : '', page }),
+    enabled: tab === 'events',
     placeholderData: keepPreviousData,
   })
   const logs = useQuery({
@@ -71,16 +115,16 @@ export function EventsPage() {
     enabled: tab === 'notify',
     placeholderData: keepPreviousData,
   })
-  const q = tab === 'outages' ? outages : logs
+  const q = tab === 'events' ? events : logs
 
   const statusText: Record<NotifyLogStatus, string> = { sent: t('events.sent'), failed: t('events.failed'), pending: t('events.pending') }
 
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">{t('events.title')}</h1>
-      <Tabs value={tab} onValueChange={(v) => update({ tab: v === 'outages' ? '' : v, page: '' })}>
+      <Tabs value={tab} onValueChange={(v) => update({ tab: v === 'events' ? '' : v, page: '' })}>
         <TabsList>
-          <TabsTrigger value="outages">{t('events.outages')}</TabsTrigger>
+          <TabsTrigger value="events">{t('events.list')}</TabsTrigger>
           <TabsTrigger value="notify">{t('events.notify')}</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -98,6 +142,21 @@ export function EventsPage() {
             ))}
           </SelectContent>
         </Select>
+        {tab === 'events' && (
+          <Select value={type || ALL} onValueChange={(v) => update({ type: v === ALL ? '' : v, page: '' })}>
+            <SelectTrigger className="w-32" aria-label={t('events.kind')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{t('events.allTypes')}</SelectItem>
+              {(Object.keys(TYPE_FILTERS) as TypeFilter[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {t(`events.filters.${k}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {tab === 'notify' && (
           <Select value={status || ALL} onValueChange={(v) => update({ status: v === ALL ? '' : v, page: '' })}>
             <SelectTrigger className="w-32" aria-label={t('events.status')}>
@@ -120,28 +179,48 @@ export function EventsPage() {
         <p className="rounded-lg border bg-card py-12 text-center text-sm text-muted-foreground">{t('events.empty')}</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border bg-card">
-          {tab === 'outages' && outages.data ? (
+          {tab === 'events' && events.data ? (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('events.server')}</TableHead>
+                  <TableHead>{t('events.kind')}</TableHead>
                   <TableHead>{t('events.start')}</TableHead>
                   <TableHead className="hidden sm:table-cell">{t('events.end')}</TableHead>
                   <TableHead>{t('events.duration')}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t('events.detail')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {outages.data.items.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell>{o.server_name || o.server_id}</TableCell>
-                    <TableCell className="text-xs tabular">{formatDateTime(o.start_at, lang)}</TableCell>
-                    <TableCell className="hidden text-xs tabular sm:table-cell">{o.end_at == null ? '—' : formatDateTime(o.end_at, lang)}</TableCell>
-                    <TableCell className="text-xs tabular">
-                      {o.end_at == null && <span className="mr-1 text-bad">{t('detail.outageOngoing')}</span>}
-                      {formatDuration(o.duration, lang)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {events.data.items.map((e) => {
+                  const instant = INSTANT.includes(e.kind)
+                  return (
+                    <TableRow key={e.id}>
+                      <TableCell>{e.server_name || e.server_id}</TableCell>
+                      <TableCell className="text-xs">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <span className={cn('size-1.5 rounded-full', KIND_DOT[e.kind])} />
+                          {t(`events.types.${e.kind}`, { defaultValue: e.kind })}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs tabular">{formatDateTime(e.start_at, lang)}</TableCell>
+                      <TableCell className="hidden text-xs tabular sm:table-cell">
+                        {instant || e.end_at == null ? '—' : formatDateTime(e.end_at, lang)}
+                      </TableCell>
+                      <TableCell className="text-xs tabular">
+                        {instant ? (
+                          '—'
+                        ) : (
+                          <>
+                            {e.end_at == null && <span className="mr-1 text-bad">{t('events.ongoing')}</span>}
+                            {formatDuration(e.duration, lang)}
+                          </>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell"><EventDetailText e={e} lang={lang} /></TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           ) : logs.data ? (

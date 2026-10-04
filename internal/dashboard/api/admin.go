@@ -35,7 +35,7 @@ func (a *API) registerAdmin(r *gin.Engine) {
 	g.GET("/admin/export", a.adminExport)
 	g.POST("/admin/import", a.adminImport)
 	g.GET("/admin/overview", a.adminOverview)
-	g.GET("/admin/outages", a.adminOutages)
+	g.GET("/admin/events", a.adminEvents)
 	g.GET("/admin/notify-log", a.adminNotifyLog)
 }
 
@@ -243,8 +243,6 @@ func (a *API) adminDeleteServer(c *gin.Context) {
 	a.Hub.Remove(id)
 	a.Traffic.Forget(id)
 	a.History.Forget(id)
-	a.notifier.Forget(id)
-	a.outages.Forget(id)
 	respond(c, gin.H{})
 }
 
@@ -364,6 +362,9 @@ func normalizeSettings(st *store.Settings) error {
 		return errors.New("公告不超过 1000 个字符")
 	}
 	if err := normalizeCaptcha(&st.Captcha); err != nil {
+		return err
+	}
+	if err := normalizeEvents(st.Events); err != nil {
 		return err
 	}
 	return normalizeNotify(&st.Notify)

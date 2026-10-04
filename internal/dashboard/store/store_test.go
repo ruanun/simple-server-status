@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -34,7 +35,7 @@ func TestOpenMigratesIdempotently(t *testing.T) {
 	}
 	defer s.Close()
 	var v int
-	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 3 {
+	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 4 {
 		t.Fatalf("schema_version = %d, %v", v, err)
 	}
 }
@@ -173,8 +174,11 @@ func TestStaticInfoAndLastSeen(t *testing.T) {
 	if err := s.SetLastSeen(ctx, a.ID, 123); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SetBootAt(ctx, a.ID, 99); err != nil {
+		t.Fatal(err)
+	}
 	got, _ := s.GetServer(ctx, a.ID)
-	if got.StaticInfo == nil || got.StaticInfo.OS != "linux" || got.LastIP != "1.2.3.4" || got.LastSeen != 123 {
+	if got.StaticInfo == nil || got.StaticInfo.OS != "linux" || got.LastIP != "1.2.3.4" || got.LastSeen != 123 || got.BootAt != 99 {
 		t.Fatalf("静态信息错误: %+v", got)
 	}
 }
@@ -326,47 +330,71 @@ func TestTrafficDaily(t *testing.T) {
 	}
 }
 
-func TestOutages(t *testing.T) {
+func TestEvents(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	id1, err := s.CreateOutage(ctx, "a", 100)
-	if err != nil {
+	a := Event{ServerID: "a", Kind: "offline", StartAt: 100}
+	if err := s.CreateEvent(ctx, &a); err != nil || a.ID == 0 || string(a.Detail) != "{}" {
+		t.Fatalf("新建事件 %+v %v", a, err)
+	}
+	b := Event{ServerID: "b", Kind: "load_cpu", StartAt: 200, Detail: json.RawMessage(`{"peak":95}`)}
+	if err := s.CreateEvent(ctx, &b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateOutage(ctx, "b", 200); err != nil {
+	at := int64(300)
+	c := Event{ServerID: "a", Kind: "reboot", StartAt: at, EndAt: &at}
+	if err := s.CreateEvent(ctx, &c); err != nil {
 		t.Fatal(err)
 	}
-	open, _ := s.OpenOutages(ctx)
+	open, _ := s.OpenEvents(ctx)
 	if len(open) != 2 {
 		t.Fatalf("应有 2 条进行中 %+v", open)
 	}
-	if err := s.CloseOutage(ctx, id1, 150); err != nil {
+	if err := s.CloseEvent(ctx, a.ID, 150); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CloseOutage(ctx, 999, 1); !errors.Is(err, ErrNotFound) {
+	if err := s.CloseEvent(ctx, 999, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("不存在应返回 ErrNotFound: %v", err)
 	}
-	all, total, err := s.ListOutages(ctx, "", 10, 0)
-	if err != nil || total != 2 || all[0].ServerID != "b" || all[1].EndAt == nil || *all[1].EndAt != 150 {
+	if err := s.SetEventDetail(ctx, b.ID, json.RawMessage(`{"peak":99}`)); err != nil {
+		t.Fatal(err)
+	}
+	if end, err := s.SetEventNotifyState(ctx, b.ID, NotifyDone); err != nil || end != nil {
+		t.Fatalf("进行中的事件结束时间应为 nil %v %v", end, err)
+	}
+	if end, err := s.SetEventNotifyState(ctx, a.ID, NotifySkipped); err != nil || end == nil || *end != 150 {
+		t.Fatalf("应返回已结束事件的结束时间 %v %v", end, err)
+	}
+	if _, err := s.SetEventNotifyState(ctx, 999, NotifyDone); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("不存在应返回 ErrNotFound: %v", err)
+	}
+	all, total, err := s.ListEvents(ctx, EventFilter{}, 10, 0)
+	if err != nil || total != 3 || all[0].Kind != "reboot" || all[1].NotifyState != NotifyDone || string(all[1].Detail) != `{"peak":99}` ||
+		all[2].EndAt == nil || *all[2].EndAt != 150 {
 		t.Fatalf("列表错误 %+v %d %v", all, total, err)
 	}
-	onlyA, total, _ := s.ListOutages(ctx, "a", 10, 0)
-	if total != 1 || len(onlyA) != 1 {
-		t.Fatalf("筛选错误 %+v", onlyA)
+	onlyA, total, _ := s.ListEvents(ctx, EventFilter{ServerID: "a"}, 10, 0)
+	if total != 2 || len(onlyA) != 2 {
+		t.Fatalf("按服务器筛选错误 %+v", onlyA)
 	}
-	page2, _, _ := s.ListOutages(ctx, "", 1, 1)
-	if len(page2) != 1 || page2[0].ServerID != "a" {
+	kinds, total, _ := s.ListEvents(ctx, EventFilter{Kinds: []string{"offline", "load_cpu"}}, 10, 0)
+	if total != 2 || len(kinds) != 2 {
+		t.Fatalf("按类型筛选错误 %+v", kinds)
+	}
+	page2, _, _ := s.ListEvents(ctx, EventFilter{}, 1, 1)
+	if len(page2) != 1 || page2[0].Kind != "load_cpu" {
 		t.Fatalf("分页错误 %+v", page2)
 	}
-	if n, _ := s.DeleteOutagesBefore(ctx, 1000); n != 1 {
-		t.Fatalf("只应删除已结束的记录，删除 %d", n)
+	if n, _ := s.DeleteEventsBefore(ctx, 1000); n != 2 {
+		t.Fatalf("只应删除已结束的事件，删除 %d", n)
 	}
 }
 
 func TestNotifyLog(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	id, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: "a", ServerName: "hk", Kind: "offline", Channel: "webhook", Title: "t", Message: "m", Status: LogPending, CreatedAt: 100})
+	eventID := int64(7)
+	id, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: "a", ServerName: "hk", EventID: &eventID, Kind: "offline", Channel: "webhook", Title: "t", Message: "m", Status: LogPending, CreatedAt: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +405,8 @@ func TestNotifyLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, total, err := s.ListNotifyLog(ctx, "", "", 10, 0)
-	if err != nil || total != 2 || list[0].Kind != "test" || list[1].Status != LogFailed || list[1].DoneAt == nil || list[1].Error == "" {
+	if err != nil || total != 2 || list[0].Kind != "test" || list[0].EventID != nil || list[1].Status != LogFailed || list[1].DoneAt == nil || list[1].Error == "" ||
+		list[1].EventID == nil || *list[1].EventID != 7 {
 		t.Fatalf("列表错误 %+v %d %v", list, total, err)
 	}
 	failed, total, _ := s.ListNotifyLog(ctx, "a", LogFailed, 10, 0)
@@ -396,7 +425,7 @@ func TestDeleteServerCleansEvents(t *testing.T) {
 	if err := s.CreateServer(ctx, &sv); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateOutage(ctx, sv.ID, 1); err != nil {
+	if err := s.CreateEvent(ctx, &Event{ServerID: sv.ID, Kind: "offline", StartAt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: sv.ID, Kind: "offline", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
@@ -405,8 +434,8 @@ func TestDeleteServerCleansEvents(t *testing.T) {
 	if err := s.DeleteServer(ctx, sv.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, n, _ := s.ListOutages(ctx, sv.ID, 10, 0); n != 0 {
-		t.Fatal("离线记录未清理")
+	if _, n, _ := s.ListEvents(ctx, EventFilter{ServerID: sv.ID}, 10, 0); n != 0 {
+		t.Fatal("事件未清理")
 	}
 	if _, n, _ := s.ListNotifyLog(ctx, sv.ID, "", 10, 0); n != 0 {
 		t.Fatal("通知记录未清理")
@@ -421,7 +450,7 @@ func TestDeleteOrphanEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{sv.ID, "gone"} {
-		if _, err := s.CreateOutage(ctx, id, 1); err != nil {
+		if err := s.CreateEvent(ctx, &Event{ServerID: id, Kind: "offline", StartAt: 1}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.AddNotifyLog(ctx, NotifyLog{ServerID: id, Kind: "offline", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
@@ -431,14 +460,14 @@ func TestDeleteOrphanEvents(t *testing.T) {
 	if _, err := s.AddNotifyLog(ctx, NotifyLog{Kind: "test", Channel: "webhook", Status: LogSent, CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.DeleteOrphanOutages(ctx); err != nil || n != 1 {
-		t.Fatalf("应删除 1 条孤儿离线记录，实际 %d %v", n, err)
+	if n, err := s.DeleteOrphanEvents(ctx); err != nil || n != 1 {
+		t.Fatalf("应删除 1 条孤儿事件，实际 %d %v", n, err)
 	}
 	if n, err := s.DeleteOrphanNotifyLog(ctx); err != nil || n != 1 {
 		t.Fatalf("应删除 1 条孤儿通知记录，实际 %d %v", n, err)
 	}
-	if list, _, _ := s.ListOutages(ctx, "", 10, 0); len(list) != 1 || list[0].ServerID != sv.ID {
-		t.Fatalf("现存服务器的离线记录应保留 %+v", list)
+	if list, _, _ := s.ListEvents(ctx, EventFilter{}, 10, 0); len(list) != 1 || list[0].ServerID != sv.ID {
+		t.Fatalf("现存服务器的事件应保留 %+v", list)
 	}
 	list, _, _ := s.ListNotifyLog(ctx, "", "", 10, 0)
 	ids := map[string]bool{}

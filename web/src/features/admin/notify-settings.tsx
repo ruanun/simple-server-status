@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -9,67 +8,42 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { adminApi, adminKeys } from '@/lib/admin-api'
+import { adminApi } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
 import type { NotifySettings, NotifyTestResult, Settings } from '@/lib/types'
 import { NO_AUTOFILL } from '@/lib/utils'
 
+import { LabeledNumber } from './labeled-number'
+import { useSaveSettings } from './use-save-settings'
 
-type NumKey = 'offline_minutes' | 'load_cpu' | 'load_mem' | 'load_disk' | 'load_minutes' | 'expire_days' | 'traffic_percent'
-type BoolKey = 'offline_enabled' | 'load_enabled' | 'expire_enabled' | 'traffic_enabled'
 
-/** NotifySettingsForm 通知渠道、规则与测试；保存时以缓存中最新的设置为基础只覆盖通知字段 */
+type NumKey = 'offline_minutes' | 'expire_days' | 'traffic_percent'
+type BoolKey = 'offline_enabled' | 'load_enabled' | 'reboot_enabled' | 'ip_change_enabled' | 'expire_enabled' | 'traffic_enabled'
+
+/** NotifySettingsForm 通知渠道、各类事件与提醒的推送开关及测试；保存时只覆盖通知字段 */
 export function NotifySettingsForm({ initial }: { initial: Settings }) {
   const { t } = useTranslation()
-  const qc = useQueryClient()
   const [n, setN] = useState<NotifySettings>(initial.notify)
   const [showToken, setShowToken] = useState(false)
-  const [pending, setPending] = useState(false)
+  const { pending, save } = useSaveSettings(initial)
   const [result, setResult] = useState<NotifyTestResult | null>(null)
   const [testing, setTesting] = useState(false)
-
-  const num = (key: NumKey, min: number, max: number) => (
-    <Input
-      id={key}
-      type="number"
-      min={min}
-      max={max}
-      className="w-24"
-      value={n[key]}
-      onChange={(e) => setN({ ...n, [key]: Number(e.target.value) })}
-    />
-  )
-  const rule = (key: BoolKey, label: string, fields: ReactNode) => (
+  const rule = (key: BoolKey, label: string, fields?: ReactNode) => (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-center gap-2">
         <Switch id={key} checked={n[key]} onCheckedChange={(v) => setN({ ...n, [key]: v })} />
         <Label htmlFor={key}>{label}</Label>
       </div>
-      {n[key] && <div className="flex flex-wrap items-center gap-3 text-sm">{fields}</div>}
+      {n[key] && fields && <div className="flex flex-wrap items-center gap-3 text-sm">{fields}</div>}
     </div>
   )
   const labeled = (key: NumKey, label: string, min: number, max: number) => (
-    <span className="flex items-center gap-2">
-      <Label htmlFor={key} className="font-normal">
-        {label}
-      </Label>
-      {num(key, min, max)}
-    </span>
+    <LabeledNumber id={key} label={label} value={n[key]} min={min} max={max} onChange={(v) => setN({ ...n, [key]: v })} />
   )
 
-  const save = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault()
-    setPending(true)
-    try {
-      const latest = qc.getQueryData<Settings>(adminKeys.settings) ?? initial
-      const saved = await adminApi.saveSettings({ ...latest, notify: n })
-      qc.setQueryData(adminKeys.settings, saved)
-      toast.success(t('settings.saved'))
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setPending(false)
-    }
+    void save({ notify: n })
   }
 
   const test = async () => {
@@ -92,7 +66,7 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
     )
 
   return (
-    <form onSubmit={(e) => void save(e)} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="webhook_url">{t('notify.webhook')}</Label>
         <Input
@@ -149,16 +123,9 @@ export function NotifySettingsForm({ initial }: { initial: Settings }) {
         </Select>
       </div>
       {rule('offline_enabled', t('notify.offline'), labeled('offline_minutes', t('notify.offlineMinutes'), 1, 1440))}
-      {rule(
-        'load_enabled',
-        t('notify.load'),
-        <>
-          {labeled('load_cpu', t('notify.loadCpu'), 1, 100)}
-          {labeled('load_mem', t('notify.loadMem'), 1, 100)}
-          {labeled('load_disk', t('notify.loadDisk'), 1, 100)}
-          {labeled('load_minutes', t('notify.loadMinutes'), 1, 10)}
-        </>,
-      )}
+      {rule('load_enabled', t('notify.load'), <span className="text-muted-foreground">{t('notify.loadHint')}</span>)}
+      {rule('reboot_enabled', t('notify.reboot'))}
+      {rule('ip_change_enabled', t('notify.ipChange'))}
       {rule('expire_enabled', t('notify.expire'), labeled('expire_days', t('notify.expireDays'), 1, 90))}
       {rule('traffic_enabled', t('notify.traffic'), labeled('traffic_percent', t('notify.trafficPercent'), 1, 100))}
       {result && (

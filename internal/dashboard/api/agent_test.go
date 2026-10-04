@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
+	"github.com/ruanun/simple-server-status/internal/dashboard/incident"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 	"github.com/ruanun/simple-server-status/internal/proto"
 )
@@ -203,7 +204,7 @@ func TestTouchOnlineWritesLastSeen(t *testing.T) {
 	on := e.addServer(store.Server{Name: "on"})
 	off := e.addServer(store.Server{Name: "off"})
 	e.api.Hub.Connect(on.ID, 2)
-	e.api.handleReport(context.Background(), on.ID, proto.Report{})
+	e.api.handleReport(context.Background(), on.ID, proto.Report{}, false)
 	e.api.touchOnline(context.Background())
 	got, _ := e.st.GetServer(context.Background(), on.ID)
 	if got.LastSeen != e.clock.Now().Unix() {
@@ -259,5 +260,44 @@ func TestAgentHelloUpdatesAdminList(t *testing.T) {
 	}](t, body)
 	if len(list) != 1 || list[0].LastIP == "" || list[0].StaticInfo == nil || list[0].StaticInfo.Country != "JP" {
 		t.Fatalf("后台列表未反映 Agent 上报的 IP 与静态信息: %+v", list)
+	}
+}
+
+func TestRebootAndIPChangeEvents(t *testing.T) {
+	e := newTestEnv(t)
+	s := e.addServer(store.Server{Name: "a"})
+	ctx := context.Background()
+	events := func(kind string) []store.Event {
+		list, _, _ := e.st.ListEvents(ctx, store.EventFilter{Kinds: []string{kind}}, 10, 0)
+		return list
+	}
+
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "1.1.1.1"})
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "1.1.1.1"})
+	if len(events(incident.KindIPChange)) != 0 {
+		t.Fatal("首次上报与未变化不应记录 IP 变化")
+	}
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "2.2.2.2"})
+	if list := events(incident.KindIPChange); len(list) != 1 || string(list[0].Detail) != `{"ipv4":["1.1.1.1","2.2.2.2"]}` {
+		t.Fatalf("应记录 IPv4 变化 %+v", list)
+	}
+
+	e.api.Hub.Connect(s.ID, 2)
+	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 100}, true)
+	if got, _ := e.st.GetServer(ctx, s.ID); got.BootAt != e.clock.Now().Unix()-100 || len(events(incident.KindReboot)) != 0 {
+		t.Fatalf("首次只记录开机时间 %d", got.BootAt)
+	}
+	e.clock.Add(time.Hour)
+	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 30}, false)
+	if len(events(incident.KindReboot)) != 0 {
+		t.Fatal("非连接后的第一次上报不判断重启")
+	}
+	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 60}, true)
+	boot := e.clock.Now().Unix() - 60
+	if list := events(incident.KindReboot); len(list) != 1 || list[0].StartAt != boot || list[0].EndAt == nil || *list[0].EndAt != boot {
+		t.Fatalf("应记录重启，时间为开机时间 %+v", list)
+	}
+	if cached, _ := e.api.server(s.ID); cached.BootAt != boot {
+		t.Fatalf("缓存中的开机时间未同步 %d", cached.BootAt)
 	}
 }

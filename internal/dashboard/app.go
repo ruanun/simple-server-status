@@ -92,7 +92,7 @@ func Run(ctx context.Context, o Options) error {
 	go func() { defer wg.Done(); a.RunBroadcaster(bgCtx) }()
 	go func() { defer wg.Done(); a.RunMaintenance(bgCtx) }()
 	go func() { defer wg.Done(); a.RunNotifier(bgCtx) }()
-	go func() { defer wg.Done(); a.RunOutages(bgCtx) }()
+	go func() { defer wg.Done(); a.RunDetector(bgCtx) }()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

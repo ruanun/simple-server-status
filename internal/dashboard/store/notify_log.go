@@ -17,6 +17,7 @@ type NotifyLog struct {
 	ID         int64  `json:"id"`
 	ServerID   string `json:"server_id"`
 	ServerName string `json:"server_name"`
+	EventID    *int64 `json:"event_id"` // 关联的事件；提醒与测试通知为 nil
 	Kind       string `json:"kind"`
 	Channel    string `json:"channel"`
 	Title      string `json:"title"`
@@ -29,8 +30,8 @@ type NotifyLog struct {
 
 // AddNotifyLog 写入一条通知记录，返回其 ID
 func (s *Store) AddNotifyLog(ctx context.Context, l NotifyLog) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO notify_log (server_id, server_name, kind, channel, title, message, status, error, created_at)
- VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, l.ServerID, l.ServerName, l.Kind, l.Channel, l.Title, l.Message, l.Status, l.Error, l.CreatedAt)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO notify_log (server_id, server_name, event_id, kind, channel, title, message, status, error, created_at)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, l.ServerID, l.ServerName, nullInt(l.EventID), l.Kind, l.Channel, l.Title, l.Message, l.Status, l.Error, l.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -49,7 +50,7 @@ func (s *Store) ListNotifyLog(ctx context.Context, serverID, status string, limi
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notify_log `+where, serverID, serverID, status, status).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, server_id, server_name, kind, channel, title, message, status, error, created_at, done_at
+	rows, err := s.db.QueryContext(ctx, `SELECT id, server_id, server_name, event_id, kind, channel, title, message, status, error, created_at, done_at
  FROM notify_log `+where+` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, serverID, serverID, status, status, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -58,13 +59,17 @@ func (s *Store) ListNotifyLog(ctx context.Context, serverID, status string, limi
 	list := []NotifyLog{}
 	for rows.Next() {
 		var l NotifyLog
-		var done sql.NullInt64
-		if err := rows.Scan(&l.ID, &l.ServerID, &l.ServerName, &l.Kind, &l.Channel, &l.Title, &l.Message, &l.Status, &l.Error, &l.CreatedAt, &done); err != nil {
+		var done, eventID sql.NullInt64
+		if err := rows.Scan(&l.ID, &l.ServerID, &l.ServerName, &eventID, &l.Kind, &l.Channel, &l.Title, &l.Message, &l.Status, &l.Error, &l.CreatedAt, &done); err != nil {
 			return nil, 0, err
 		}
 		if done.Valid {
 			v := done.Int64
 			l.DoneAt = &v
+		}
+		if eventID.Valid {
+			v := eventID.Int64
+			l.EventID = &v
 		}
 		list = append(list, l)
 	}

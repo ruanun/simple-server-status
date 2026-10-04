@@ -12,30 +12,42 @@ const now = Math.floor(Date.now() / 1000)
 const SERVERS = [makeAdminServer({ id: 'a', name: 'hk' }), makeAdminServer({ id: 'b', name: 'jp' })]
 
 describe('EventsPage', () => {
-  it('离线记录：显示进行中与时长，可按服务器筛选并写入网址', async () => {
+  it('事件：显示类型、进行中与详情，可按服务器与类型筛选并写入网址', async () => {
     const fetchFn = mockFetch({
       'GET /api/admin/servers': SERVERS,
-      'GET /api/admin/outages?page=1&size=50': {
+      'GET /api/admin/events?page=1&size=50': {
         items: [
-          { id: 2, server_id: 'a', server_name: 'hk', start_at: now - 120, end_at: null, duration: 120 },
-          { id: 1, server_id: 'b', server_name: 'jp', start_at: now - 3600, end_at: now - 3120, duration: 480 },
+          { id: 4, server_id: 'a', server_name: 'hk', kind: 'ip_change', start_at: now - 60, end_at: now - 60, duration: 0, detail: { ipv4: ['1.1.1.1', '2.2.2.2'] } },
+          { id: 3, server_id: 'a', server_name: 'hk', kind: 'load_cpu', start_at: now - 300, end_at: null, duration: 300, detail: { threshold: 90, minutes: 5, peak: 97.25 } },
+          { id: 1, server_id: 'b', server_name: 'jp', kind: 'offline', start_at: now - 3600, end_at: now - 3120, duration: 480, detail: {} },
         ],
-        total: 2,
+        total: 3,
       },
-      'GET /api/admin/outages?server_id=b&page=1&size=50': {
-        items: [{ id: 1, server_id: 'b', server_name: 'jp', start_at: now - 3600, end_at: now - 3120, duration: 480 }],
+      'GET /api/admin/events?server_id=b&page=1&size=50': {
+        items: [{ id: 1, server_id: 'b', server_name: 'jp', kind: 'offline', start_at: now - 3600, end_at: now - 3120, duration: 480, detail: {} }],
         total: 1,
       },
+      'GET /api/admin/events?server_id=b&kind=load_cpu%2Cload_mem%2Cload_disk&page=1&size=50': { items: [], total: 0 },
     })
     const user = userEvent.setup()
     renderWithProviders(<EventsPage />, { route: '/admin/events', path: '/admin/events' })
     expect(await screen.findByText('进行中')).toBeInTheDocument()
+    expect(screen.getByText('CPU 高负载')).toBeInTheDocument()
+    expect(screen.getByText('峰值 97.3%（阈值 90%，5 分钟均值）')).toBeInTheDocument()
+    expect(screen.getByText('IPv4 1.1.1.1 → 2.2.2.2')).toBeInTheDocument()
     expect(screen.getByText('8 分钟')).toBeInTheDocument()
+    const ipRow = screen.getByText('IP 变化').closest('tr') as HTMLElement
+    expect(within(ipRow).getAllByText('—')).toHaveLength(2) // 瞬时事件没有结束时间与时长
+
     await user.click(screen.getByRole('combobox', { name: '服务器' }))
     await user.click(await screen.findByRole('option', { name: 'jp' }))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('server=b'))
     await waitFor(() => expect(screen.queryByText('进行中')).not.toBeInTheDocument())
-    expect(fetchFn).toHaveBeenCalledWith(expect.stringContaining('server_id=b'), expect.anything())
+    await user.click(screen.getByRole('combobox', { name: '类型' }))
+    await user.click(await screen.findByRole('option', { name: '高负载' }))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('type=load'))
+    expect(await screen.findByText('暂无记录')).toBeInTheDocument()
+    expect(fetchFn).toHaveBeenCalledWith(expect.stringContaining('kind=load_cpu%2Cload_mem%2Cload_disk'), expect.anything())
   })
 
   it('通知记录：状态筛选、失败原因、点击展开正文', async () => {
@@ -61,8 +73,11 @@ describe('EventsPage', () => {
   it('分页：有下一页时可翻页并写入网址', async () => {
     mockFetch({
       'GET /api/admin/servers': SERVERS,
-      'GET /api/admin/outages?page=1&size=50': { items: [{ id: 1, server_id: 'a', server_name: 'hk', start_at: now - 600, end_at: now - 300, duration: 300 }], total: 120 },
-      'GET /api/admin/outages?page=2&size=50': { items: [], total: 120 },
+      'GET /api/admin/events?page=1&size=50': {
+        items: [{ id: 1, server_id: 'a', server_name: 'hk', kind: 'offline', start_at: now - 600, end_at: now - 300, duration: 300, detail: {} }],
+        total: 120,
+      },
+      'GET /api/admin/events?page=2&size=50': { items: [], total: 120 },
     })
     const user = userEvent.setup()
     renderWithProviders(<EventsPage />, { route: '/admin/events', path: '/admin/events' })

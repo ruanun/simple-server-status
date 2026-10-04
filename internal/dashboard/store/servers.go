@@ -38,11 +38,12 @@ type Server struct {
 	UpdatedAt       int64        `json:"updated_at"`
 	Note            string       `json:"note"`
 	NotifyMuted     bool         `json:"notify_muted"`
+	BootAt          int64        `json:"-"` // 最近一次的开机时间（Unix 秒），用于判断重启；0 表示尚无记录
 }
 
 const selectCols = `id, name, secret, grp, country, sort, hidden, price, currency, billing_cycle,
  expire_at, traffic_limit, traffic_mode, traffic_reset_day, report_interval,
- nic_include, nic_exclude, mount_exclude, static_info, last_ip, last_seen, created_at, updated_at, note, notify_muted`
+ nic_include, nic_exclude, mount_exclude, static_info, last_ip, last_seen, created_at, updated_at, note, notify_muted, boot_at`
 
 const insertSQL = `INSERT INTO servers (id, name, secret, grp, country, sort, hidden, price, currency, billing_cycle,
  expire_at, traffic_limit, traffic_mode, traffic_reset_day, report_interval,
@@ -73,7 +74,7 @@ func scanServer(row scanner) (Server, error) {
 	)
 	err := row.Scan(&s.ID, &s.Name, &s.Secret, &s.Group, &s.Country, &s.Sort, &hidden, &price, &s.Currency,
 		&s.BillingCycle, &expire, &limit, &s.TrafficMode, &s.TrafficResetDay, &s.ReportInterval,
-		&nicIn, &nicEx, &mountEx, &static, &s.LastIP, &s.LastSeen, &s.CreatedAt, &s.UpdatedAt, &s.Note, &muted)
+		&nicIn, &nicEx, &mountEx, &static, &s.LastIP, &s.LastSeen, &s.CreatedAt, &s.UpdatedAt, &s.Note, &muted, &s.BootAt)
 	if err != nil {
 		return s, err
 	}
@@ -233,7 +234,7 @@ func (s *Store) DeleteServer(ctx context.Context, id string) error {
 			`DELETE FROM traffic_monthly WHERE server_id = ?`,
 			`DELETE FROM traffic_daily WHERE server_id = ?`,
 			`DELETE FROM notify_state WHERE server_id = ?`,
-			`DELETE FROM outages WHERE server_id = ?`,
+			`DELETE FROM events WHERE server_id = ?`,
 			`DELETE FROM notify_log WHERE server_id = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, id); err != nil {
@@ -270,6 +271,11 @@ func (s *Store) SetStaticInfo(ctx context.Context, id, ip string, h proto.Hello)
 		return err
 	}
 	return affected(s.db.ExecContext(ctx, `UPDATE servers SET static_info = ?, last_ip = ? WHERE id = ?`, string(b), ip, id))
+}
+
+// SetBootAt 记录开机时间
+func (s *Store) SetBootAt(ctx context.Context, id string, ts int64) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE servers SET boot_at = ? WHERE id = ?`, ts, id))
 }
 
 // SetLastSeen 记录最后在线时间

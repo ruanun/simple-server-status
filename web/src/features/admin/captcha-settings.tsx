@@ -1,17 +1,15 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { adminApi, adminKeys } from '@/lib/admin-api'
-import { errorMessage } from '@/lib/api'
 import type { CaptchaMode, CaptchaSettings, Settings } from '@/lib/types'
 import { NO_AUTOFILL } from '@/lib/utils'
+
+import { useSaveSettings } from './use-save-settings'
 
 /** useDebounced 值停止变化 delay 毫秒后才更新，避免输入 Site Key 时每个字符都重新加载验证组件 */
 function useDebounced<T>(value: T, delay: number): T {
@@ -29,12 +27,11 @@ function useDebounced<T>(value: T, delay: number): T {
  */
 export function CaptchaSettingsForm({ initial }: { initial: Settings }) {
   const { t } = useTranslation()
-  const qc = useQueryClient()
   const [c, setC] = useState<CaptchaSettings>(initial.captcha)
   const [saved, setSaved] = useState<CaptchaSettings>(initial.captcha)
   const [token, setToken] = useState<string | null>(null)
   const [widgetKey, setWidgetKey] = useState(0)
-  const [pending, setPending] = useState(false)
+  const { pending, save } = useSaveSettings(initial)
 
   const siteKey = c.turnstile_site_key.trim()
   const secret = c.turnstile_secret.trim()
@@ -42,22 +39,14 @@ export function CaptchaSettingsForm({ initial }: { initial: Settings }) {
     c.mode === 'turnstile' && !(saved.mode === 'turnstile' && saved.turnstile_site_key === siteKey && saved.turnstile_secret === secret)
   const widgetSiteKey = useDebounced(siteKey, 600)
 
-  const save = async (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setPending(true)
-    try {
-      const latest = qc.getQueryData<Settings>(adminKeys.settings) ?? initial
-      const res = await adminApi.saveSettings({ ...latest, captcha: c, ...(needVerify ? { turnstile_token: token ?? '' } : {}) })
-      qc.setQueryData(adminKeys.settings, res)
+    const res = await save({ captcha: c, ...(needVerify ? { turnstile_token: token ?? '' } : {}) })
+    if (res) {
       setSaved(res.captcha)
       setC(res.captcha)
-      toast.success(t('settings.saved'))
-    } catch (err) {
-      toast.error(errorMessage(err))
-      // token 已被后端核验消耗，需要重新验证
-      if (needVerify) setWidgetKey((k) => k + 1)
-    } finally {
-      setPending(false)
+    } else if (needVerify) {
+      setWidgetKey((k) => k + 1) // token 已被后端核验消耗，需要重新验证
     }
   }
 
@@ -68,7 +57,7 @@ export function CaptchaSettingsForm({ initial }: { initial: Settings }) {
   ]
 
   return (
-    <form onSubmit={(e) => void save(e)} className="space-y-4">
+    <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="captcha_mode">{t('captcha.mode')}</Label>
         <Select value={c.mode} onValueChange={(v) => setC({ ...c, mode: v as CaptchaMode })}>

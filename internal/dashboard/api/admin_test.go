@@ -302,7 +302,8 @@ func TestAdminSettings(t *testing.T) {
 	if code, _ := e.do("PUT", "/api/admin/settings", tok, bad); code != http.StatusBadRequest {
 		t.Fatalf("非法间隔应返回 400，实际 %d", code)
 	}
-	good := store.Settings{SiteTitle: "我的探针", ShowPrice: true, DefaultReportInterval: 5, InstallScriptBase: "https://x/", Notify: store.DefaultNotifySettings()}
+	good := store.Settings{SiteTitle: "我的探针", ShowPrice: true, DefaultReportInterval: 5, InstallScriptBase: "https://x/",
+		Notify: store.DefaultNotifySettings(), Events: store.DefaultEventSettings()}
 	code, body := e.do("PUT", "/api/admin/settings", tok, good)
 	saved := decodeData[store.Settings](t, body)
 	if code != http.StatusOK || saved.InstallScriptBase != "https://x" {
@@ -322,17 +323,28 @@ func TestSettingsNotifyValidation(t *testing.T) {
 	tok := e.adminToken()
 	base := func(mod func(n gin.H)) gin.H {
 		n := gin.H{"webhook_url": "", "telegram_token": "", "telegram_chat_id": "", "lang": "zh-CN",
-			"offline_enabled": true, "offline_minutes": 3, "load_enabled": true, "load_cpu": 90, "load_mem": 90, "load_disk": 90,
-			"load_minutes": 5, "expire_enabled": true, "expire_days": 7, "traffic_enabled": true, "traffic_percent": 90}
+			"offline_enabled": true, "offline_minutes": 3, "load_enabled": true, "reboot_enabled": true, "ip_change_enabled": true,
+			"expire_enabled": true, "expire_days": 7, "traffic_enabled": true, "traffic_percent": 90}
+		ev := gin.H{"load_cpu": 90, "load_mem": 90, "load_disk": 90, "load_minutes": 5}
 		mod(n)
-		return gin.H{"site_title": "t", "default_report_interval": 2, "install_script_base": "https://x.example.com", "notify": n}
+		if v, ok := n["events"]; ok {
+			ev = v.(gin.H)
+			delete(n, "events")
+		}
+		return gin.H{"site_title": "t", "default_report_interval": 2, "install_script_base": "https://x.example.com", "notify": n, "events": ev}
+	}
+	if code, body := e.do("PUT", "/api/admin/settings", tok, base(func(gin.H) {})); code != http.StatusOK {
+		t.Fatalf("合法设置应保存成功，实际 %d %s", code, body)
 	}
 	bad := []func(n gin.H){
 		func(n gin.H) { n["webhook_url"] = "ftp://x" },
 		func(n gin.H) { n["telegram_token"] = "123:abc" },
 		func(n gin.H) { n["lang"] = "fr" },
 		func(n gin.H) { n["offline_minutes"] = 0 },
-		func(n gin.H) { n["load_minutes"] = 11 },
+		func(n gin.H) {
+			n["events"] = gin.H{"load_cpu": 90, "load_mem": 90, "load_disk": 90, "load_minutes": 11}
+		},
+		func(n gin.H) { n["events"] = gin.H{"load_cpu": 0, "load_mem": 90, "load_disk": 90, "load_minutes": 5} },
 		func(n gin.H) { n["expire_days"] = 91 },
 		func(n gin.H) { n["traffic_percent"] = 101 },
 	}
@@ -526,7 +538,7 @@ func TestAdminListLastSeenUsesLiveReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.api.Hub.Connect(on.ID, 2)
-	e.api.handleReport(context.Background(), on.ID, proto.Report{})
+	e.api.handleReport(context.Background(), on.ID, proto.Report{}, false)
 
 	code, body := e.do("GET", "/api/admin/servers", e.adminToken(), nil)
 	if code != http.StatusOK {
@@ -570,8 +582,7 @@ func TestAdminNotifyTest(t *testing.T) {
 	var hits atomic.Int32
 	hook := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
 	defer hook.Close()
-	body := gin.H{"webhook_url": hook.URL, "lang": "zh-CN", "offline_minutes": 3, "load_cpu": 90, "load_mem": 90, "load_disk": 90,
-		"load_minutes": 5, "expire_days": 7, "traffic_percent": 90}
+	body := gin.H{"webhook_url": hook.URL, "lang": "zh-CN", "offline_minutes": 3, "expire_days": 7, "traffic_percent": 90}
 	code, b := e.do("POST", "/api/admin/notify/test", tok, body)
 	res := decodeData[map[string]*string](t, b)
 	if code != http.StatusOK || res["webhook"] == nil || *res["webhook"] != "ok" || res["telegram"] != nil || hits.Load() != 1 {

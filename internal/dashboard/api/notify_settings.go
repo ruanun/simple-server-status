@@ -33,19 +33,21 @@ func normalizeNotify(n *store.NotifySettings) error {
 	if n.Lang != "zh-CN" && n.Lang != "en-US" {
 		return errors.New("通知语言只能是 zh-CN 或 en-US")
 	}
-	for _, c := range []struct {
-		name     string
-		v        int
-		min, max int
-	}{
+	return checkRanges([]rangeCheck{
 		{"离线通知时长（分钟）", n.OfflineMinutes, 1, 1440},
-		{"CPU 阈值", n.LoadCPU, 1, 100},
-		{"内存阈值", n.LoadMem, 1, 100},
-		{"硬盘阈值", n.LoadDisk, 1, 100},
-		{"高负载持续时长（分钟）", n.LoadMinutes, 1, 10},
 		{"到期提前天数", n.ExpireDays, 1, 90},
 		{"流量阈值", n.TrafficPercent, 1, 100},
-	} {
+	})
+}
+
+type rangeCheck struct {
+	name     string
+	v        int
+	min, max int
+}
+
+func checkRanges(cs []rangeCheck) error {
+	for _, c := range cs {
 		if c.v < c.min || c.v > c.max {
 			return fmt.Errorf("%s应在 %d–%d 之间", c.name, c.min, c.max)
 		}
@@ -71,14 +73,27 @@ func (a *API) adminNotifyTest(c *gin.Context) {
 	respond(c, notify.SendTest(c.Request.Context(), cfg, a.NotifyOptions, a.Now(), a.Store))
 }
 
-// Servers 供通知模块读取当前服务器列表
+// normalizeEvents 校验检测规则的取值范围
+func normalizeEvents(ev store.EventSettings) error {
+	return checkRanges([]rangeCheck{
+		{"CPU 阈值", ev.LoadCPU, 1, 100},
+		{"内存阈值", ev.LoadMem, 1, 100},
+		{"硬盘阈值", ev.LoadDisk, 1, 100},
+		{"高负载统计时长（分钟）", ev.LoadMinutes, 1, 10},
+	})
+}
+
+// Servers 供事件检测与通知模块读取当前服务器列表
 func (a *API) Servers() []store.Server { return a.serverList() }
 
 // NotifySettings 供通知模块读取当前通知设置
 func (a *API) NotifySettings() store.NotifySettings { return a.currentSettings().Notify }
 
+// EventSettings 供事件检测读取当前检测规则
+func (a *API) EventSettings() store.EventSettings { return a.currentSettings().Events }
+
 // RunNotifier 运行通知检查与发送，直到 ctx 结束
 func (a *API) RunNotifier(ctx context.Context) { a.notifier.Run(ctx) }
 
-// RunOutages 运行离线记录检查，直到 ctx 结束
-func (a *API) RunOutages(ctx context.Context) { a.outages.Run(ctx) }
+// RunDetector 运行事件检测，直到 ctx 结束
+func (a *API) RunDetector(ctx context.Context) { a.detector.Run(ctx) }

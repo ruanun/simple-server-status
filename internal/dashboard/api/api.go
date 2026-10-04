@@ -18,8 +18,8 @@ import (
 	"github.com/ruanun/simple-server-status/internal/dashboard/captcha"
 	"github.com/ruanun/simple-server-status/internal/dashboard/history"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
+	"github.com/ruanun/simple-server-status/internal/dashboard/incident"
 	"github.com/ruanun/simple-server-status/internal/dashboard/notify"
-	"github.com/ruanun/simple-server-status/internal/dashboard/outage"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 	"github.com/ruanun/simple-server-status/internal/dashboard/traffic"
 )
@@ -57,8 +57,9 @@ type API struct {
 	agents   *agentRegistry
 	bc       *broadcaster
 	conns    connTracker
+	events   *incident.Recorder
+	detector *incident.Detector
 	notifier *notify.Notifier
-	outages  *outage.Tracker
 
 	captchas  *captcha.Store
 	turnstile captcha.Turnstile
@@ -66,7 +67,7 @@ type API struct {
 	upMu        sync.RWMutex
 	uptimeCache map[string]*float64 // 24 小时在线率，每分钟刷新
 
-	lastEventCleanup time.Time // 上次清理离线记录与通知记录的时间
+	lastEventCleanup time.Time // 上次清理事件与通知记录的时间
 }
 
 // New 创建 API 并加载缓存
@@ -74,8 +75,9 @@ func New(ctx context.Context, d Deps) (*API, error) {
 	a := &API{Deps: d, agents: newAgentRegistry(),
 		captchas: captcha.NewStore(d.Now, d.CaptchaCode), turnstile: captcha.Turnstile{URL: d.TurnstileURL}}
 	a.bc = newBroadcaster(a)
-	a.notifier = notify.NewNotifier(a, d.Hub, d.Traffic, d.Store, notify.NewSender(d.NotifyOptions, d.Log), d.NotifyOptions, d.Now, d.Log)
-	a.outages = outage.New(a, d.Hub, d.Store, d.Now, d.Log, d.OutageThreshold)
+	a.events = incident.NewRecorder(d.Store, d.Now, d.Log)
+	a.detector = incident.NewDetector(a, d.Hub, a.events, d.Now, d.Log, d.OutageThreshold)
+	a.notifier = notify.NewNotifier(a, a.events, d.Traffic, d.Store, notify.NewSender(d.NotifyOptions, d.Log), d.NotifyOptions, d.Now, d.Log)
 	if err := a.reload(ctx); err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -12,26 +13,32 @@ import (
 	"github.com/ruanun/simple-server-status/internal/dashboard/auth"
 	"github.com/ruanun/simple-server-status/internal/dashboard/history"
 	"github.com/ruanun/simple-server-status/internal/dashboard/hub"
+	"github.com/ruanun/simple-server-status/internal/dashboard/incident"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 	"github.com/ruanun/simple-server-status/internal/dashboard/traffic"
 )
 
-func TestOutageEndpoints(t *testing.T) {
+// addEvent 直接写入一条事件
+func (e *testEnv) addEvent(t *testing.T, ev store.Event) store.Event {
+	t.Helper()
+	if err := e.st.CreateEvent(context.Background(), &ev); err != nil {
+		t.Fatal(err)
+	}
+	return ev
+}
+
+func TestEventEndpoints(t *testing.T) {
 	e := newTestEnv(t)
-	ctx := context.Background()
 	s := e.addServer(store.Server{Name: "hk"})
 	hidden := e.addServer(store.Server{Name: "h", Hidden: true})
 	now := e.clock.Now().Unix()
-	id, _ := e.st.CreateOutage(ctx, s.ID, now-600)
-	if err := e.st.CloseOutage(ctx, id, now-300); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.st.CreateOutage(ctx, s.ID, now-60); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.st.CreateOutage(ctx, hidden.ID, now-60); err != nil {
-		t.Fatal(err)
-	}
+	ended := now - 300
+	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindOffline, StartAt: now - 600, EndAt: &ended})
+	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindOffline, StartAt: now - 60})
+	e.addEvent(t, store.Event{ServerID: hidden.ID, Kind: incident.KindOffline, StartAt: now - 60})
+	at := now - 30
+	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindReboot, StartAt: at, EndAt: &at, Detail: json.RawMessage(`{"boot_at":1}`)})
+	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindLoadCPU, StartAt: now - 120, Detail: json.RawMessage(`{"peak":95}`)})
 
 	code, body := e.do("GET", "/api/public/servers/"+s.ID+"/outages", "", nil)
 	pub := decodeData[[]struct {
@@ -40,7 +47,7 @@ func TestOutageEndpoints(t *testing.T) {
 		Duration int64  `json:"duration"`
 	}](t, body)
 	if code != http.StatusOK || len(pub) != 2 || pub[0].EndAt != nil || pub[0].Duration != 60 || pub[1].Duration != 300 {
-		t.Fatalf("公开离线记录错误 %d %+v", code, pub)
+		t.Fatalf("公开接口只返回离线记录 %d %+v", code, pub)
 	}
 	if strings.Contains(string(body), "server_id") {
 		t.Fatalf("公开接口不应含服务器 ID 等字段: %s", body)
@@ -49,24 +56,34 @@ func TestOutageEndpoints(t *testing.T) {
 		t.Fatalf("隐藏服务器未登录应 404，实际 %d", code)
 	}
 
-	tok := e.adminToken()
-	code, body = e.do("GET", "/api/admin/outages?server_id="+s.ID+"&size=1&page=2", tok, nil)
-	adm := decodeData[struct {
-		Items []struct {
-			ServerName string `json:"server_name"`
-			Duration   int64  `json:"duration"`
-		} `json:"items"`
-		Total int `json:"total"`
-	}](t, body)
-	if code != http.StatusOK || adm.Total != 2 || len(adm.Items) != 1 || adm.Items[0].ServerName != "hk" || adm.Items[0].Duration != 300 {
-		t.Fatalf("后台离线记录错误 %d %+v", code, adm)
+	type item struct {
+		ServerName string          `json:"server_name"`
+		Kind       string          `json:"kind"`
+		Duration   int64           `json:"duration"`
+		Detail     json.RawMessage `json:"detail"`
 	}
-	for _, q := range []string{"page=0", "size=abc", "page=-1"} {
-		if code, b := e.do("GET", "/api/admin/outages?"+q, tok, nil); code != http.StatusBadRequest || errorCode(t, b) != "invalid_input" {
+	type page struct {
+		Items []item `json:"items"`
+		Total int    `json:"total"`
+	}
+	tok := e.adminToken()
+	code, body = e.do("GET", "/api/admin/events?server_id="+s.ID, tok, nil)
+	all := decodeData[page](t, body)
+	if code != http.StatusOK || all.Total != 4 || all.Items[0].Kind != incident.KindReboot || all.Items[0].Duration != 0 ||
+		string(all.Items[0].Detail) != `{"boot_at":1}` || all.Items[0].ServerName != "hk" {
+		t.Fatalf("后台事件错误 %d %+v", code, all)
+	}
+	code, body = e.do("GET", "/api/admin/events?server_id="+s.ID+"&kind=offline,load_cpu&size=1&page=3", tok, nil)
+	adm := decodeData[page](t, body)
+	if code != http.StatusOK || adm.Total != 3 || len(adm.Items) != 1 || adm.Items[0].Kind != incident.KindOffline || adm.Items[0].Duration != 300 {
+		t.Fatalf("按类型筛选与分页错误 %d %+v", code, adm)
+	}
+	for _, q := range []string{"page=0", "size=abc", "page=-1", "kind=bad", "kind=offline,bad"} {
+		if code, b := e.do("GET", "/api/admin/events?"+q, tok, nil); code != http.StatusBadRequest || errorCode(t, b) != "invalid_input" {
 			t.Errorf("%s 应返回 invalid_input，实际 %d", q, code)
 		}
 	}
-	if code, _ := e.do("GET", "/api/admin/outages", "", nil); code != http.StatusUnauthorized {
+	if code, _ := e.do("GET", "/api/admin/events", "", nil); code != http.StatusUnauthorized {
 		t.Fatalf("未登录应 401，实际 %d", code)
 	}
 }
@@ -103,12 +120,12 @@ func TestCleanupEvents(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	old := e.clock.Now().Add(-91 * 24 * time.Hour).Unix()
-	id, _ := e.st.CreateOutage(ctx, "a", old)
-	_ = e.st.CloseOutage(ctx, id, old+60)
+	end := old + 60
+	e.addEvent(t, store.Event{ServerID: "a", Kind: incident.KindOffline, StartAt: old, EndAt: &end})
 	_, _ = e.st.AddNotifyLog(ctx, store.NotifyLog{Kind: "test", Channel: "webhook", Status: store.LogSent, CreatedAt: old})
 	e.api.cleanupEvents(ctx)
-	if _, n, _ := e.st.ListOutages(ctx, "", 10, 0); n != 0 {
-		t.Fatal("90 天前的离线记录应清理")
+	if _, n, _ := e.st.ListEvents(ctx, store.EventFilter{}, 10, 0); n != 0 {
+		t.Fatal("90 天前的事件应清理")
 	}
 	if _, n, _ := e.st.ListNotifyLog(ctx, "", "", 10, 0); n != 0 {
 		t.Fatal("90 天前的通知记录应清理")
@@ -121,13 +138,13 @@ func TestCleanupEventsRemovesOrphans(t *testing.T) {
 	sv := e.addServer(store.Server{Name: "hk"})
 	now := e.clock.Now().Unix()
 	for _, id := range []string{sv.ID, "gone"} {
-		_, _ = e.st.CreateOutage(ctx, id, now)
+		e.addEvent(t, store.Event{ServerID: id, Kind: incident.KindOffline, StartAt: now})
 		_, _ = e.st.AddNotifyLog(ctx, store.NotifyLog{ServerID: id, Kind: "offline", Channel: "webhook", Status: store.LogSent, CreatedAt: now})
 	}
 	_, _ = e.st.AddNotifyLog(ctx, store.NotifyLog{Kind: "test", Channel: "webhook", Status: store.LogSent, CreatedAt: now})
 	e.api.cleanupEvents(ctx)
-	if list, _, _ := e.st.ListOutages(ctx, "", 10, 0); len(list) != 1 || list[0].ServerID != sv.ID {
-		t.Fatalf("已删除服务器的离线记录应清理，现存服务器的保留 %+v", list)
+	if list, _, _ := e.st.ListEvents(ctx, store.EventFilter{}, 10, 0); len(list) != 1 || list[0].ServerID != sv.ID {
+		t.Fatalf("已删除服务器的事件应清理，现存服务器的保留 %+v", list)
 	}
 	if _, n, _ := e.st.ListNotifyLog(ctx, "gone", "", 10, 0); n != 0 {
 		t.Fatal("已删除服务器的通知记录应清理")

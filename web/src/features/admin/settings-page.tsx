@@ -27,7 +27,9 @@ import { downloadJson } from '@/lib/download'
 import type { Settings } from '@/lib/types'
 
 import { CaptchaSettingsForm } from './captcha-settings'
+import { EventRulesForm } from './event-rules'
 import { NotifySettingsForm } from './notify-settings'
+import { useSaveSettings } from './use-save-settings'
 
 function Card({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
@@ -41,39 +43,27 @@ function Card({ title, desc, children }: { title: string; desc?: string; childre
   )
 }
 
-/** SiteSettingsForm 站点设置；保存时以缓存中最新的设置为基础只覆盖站点字段，避免吞掉通知表单已保存的内容 */
+/** SiteSettingsForm 站点设置；保存时只覆盖站点字段 */
 function SiteSettingsForm({ initial }: { initial: Settings }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [s, setS] = useState(initial)
-  const [pending, setPending] = useState(false)
+  const { pending, save } = useSaveSettings(initial)
 
-  const save = async (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setPending(true)
-    try {
-      const latest = qc.getQueryData<Settings>(adminKeys.settings) ?? initial
-      const saved = await adminApi.saveSettings({
-        ...latest,
-        site_title: s.site_title,
-        show_price: s.show_price,
-        default_report_interval: Number(s.default_report_interval),
-        install_script_base: s.install_script_base,
-        announcement: s.announcement,
-      })
-      // 直接更新缓存而不让表单重新挂载，另一个表单中未保存的编辑得以保留
-      qc.setQueryData(adminKeys.settings, saved)
-      await qc.invalidateQueries({ queryKey: ['site'] })
-      toast.success(t('settings.saved'))
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setPending(false)
-    }
+    const saved = await save({
+      site_title: s.site_title,
+      show_price: s.show_price,
+      default_report_interval: Number(s.default_report_interval),
+      install_script_base: s.install_script_base,
+      announcement: s.announcement,
+    })
+    if (saved) await qc.invalidateQueries({ queryKey: ['site'] })
   }
 
   return (
-    <form onSubmit={(e) => void save(e)} className="space-y-4">
+    <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="site_title">{t('settings.siteTitle')}</Label>
         <Input id="site_title" value={s.site_title} onChange={(e) => setS({ ...s, site_title: e.target.value })} />
@@ -253,7 +243,7 @@ function BackupPanel({ onImported }: { onImported: () => void }) {
 }
 
 // 设置页分区；当前分区保存在网址 ?tab= 中，便于刷新、收藏和直接跳转
-const TABS = ['site', 'notify', 'account', 'backup'] as const
+const TABS = ['site', 'rules', 'notify', 'account', 'backup'] as const
 type Tab = (typeof TABS)[number]
 
 function isTab(v: string | null): v is Tab {
@@ -281,6 +271,7 @@ export function SettingsPage() {
     )
   const labels: Record<Tab, string> = {
     site: t('settings.site'),
+    rules: t('rules.title'),
     notify: t('notify.title'),
     account: t('settings.account'),
     backup: t('settings.backupTab'),
@@ -307,6 +298,11 @@ export function SettingsPage() {
             ) : (
               <Skeleton className="h-48" />
             )}
+          </Card>
+        </TabsContent>
+        <TabsContent value="rules" forceMount className={pane}>
+          <Card title={t('rules.title')} desc={t('rules.desc')}>
+            {q.data ? <EventRulesForm key={formVersion} initial={q.data} /> : <Skeleton className="h-32" />}
           </Card>
         </TabsContent>
         <TabsContent value="notify" forceMount className={pane}>

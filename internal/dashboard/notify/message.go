@@ -28,12 +28,20 @@ func Render(e *Event, lang string) {
 	case KindLoad:
 		e.Title = pick("[高负载] ", "[High load] ") + name
 		e.Message = pick(
-			fmt.Sprintf("服务器 %s 最近 %d 分钟平均负载过高：%s", name, e.Minutes, loads(e.Loads, en)),
-			fmt.Sprintf("Server %s has high average load over the last %d minutes: %s", name, e.Minutes, loads(e.Loads, en)))
+			fmt.Sprintf("服务器 %s 最近 %d 分钟平均负载过高：%s %.1f%%", name, e.Minutes, metricLabel(e.Load.Metric, en), e.Load.Value),
+			fmt.Sprintf("Server %s has high average load over the last %d minutes: %s %.1f%%", name, e.Minutes, metricLabel(e.Load.Metric, en), e.Load.Value))
 	case KindLoadRecovered:
 		e.Title = pick("[负载恢复] ", "[Load recovered] ") + name
-		e.Message = pick(fmt.Sprintf("服务器 %s 最近 %d 分钟的负载已恢复正常", name, e.Minutes),
-			fmt.Sprintf("Server %s load is back to normal over the last %d minutes", name, e.Minutes))
+		e.Message = pick(fmt.Sprintf("服务器 %s 最近 %d 分钟的%s负载已恢复正常", name, e.Minutes, metricLabel(e.Load.Metric, false)),
+			fmt.Sprintf("Server %s %s load is back to normal over the last %d minutes", name, metricLabel(e.Load.Metric, true), e.Minutes))
+	case KindReboot:
+		at := time.Unix(e.BootAt, 0).Format(time.DateTime)
+		e.Title = pick("[重启] ", "[Rebooted] ") + name
+		e.Message = pick(fmt.Sprintf("服务器 %s 已重启，开机时间 %s", name, at), fmt.Sprintf("Server %s has rebooted, booted at %s", name, at))
+	case KindIPChange:
+		e.Title = pick("[IP 变化] ", "[IP changed] ") + name
+		e.Message = pick(fmt.Sprintf("服务器 %s 的公网地址已变化：%s", name, ipChanges(e.IPs, false)),
+			fmt.Sprintf("Server %s public address changed: %s", name, ipChanges(e.IPs, true)))
 	case KindExpire:
 		date := time.Unix(e.ExpireAt, 0).Format(time.DateOnly)
 		if e.Days > 0 {
@@ -76,15 +84,22 @@ func duration(minutes int64, en bool) string {
 	return fmt.Sprintf("%d 小时 %d 分钟", h, m)
 }
 
-func loads(vs []LoadValue, en bool) string {
-	labels := map[string][2]string{"cpu": {"CPU", "CPU"}, "mem": {"内存", "memory"}, "disk": {"硬盘", "disk"}}
-	parts := make([]string, 0, len(vs))
-	for _, v := range vs {
-		l := labels[v.Metric][0]
-		if en {
-			l = labels[v.Metric][1]
+var metricLabels = map[string][2]string{"cpu": {"CPU", "CPU"}, "mem": {"内存", "memory"}, "disk": {"硬盘", "disk"}}
+
+func metricLabel(metric string, en bool) string {
+	if en {
+		return metricLabels[metric][1]
+	}
+	return metricLabels[metric][0]
+}
+
+// ipChanges 按 IPv4、IPv6 的顺序格式化地址变化
+func ipChanges(ips map[string][2]string, en bool) string {
+	parts := []string{}
+	for _, k := range []struct{ key, label string }{{"ipv4", "IPv4"}, {"ipv6", "IPv6"}} {
+		if v, ok := ips[k.key]; ok {
+			parts = append(parts, fmt.Sprintf("%s %s → %s", k.label, v[0], v[1]))
 		}
-		parts = append(parts, fmt.Sprintf("%s %.1f%%", l, v.Value))
 	}
 	if en {
 		return strings.Join(parts, ", ")

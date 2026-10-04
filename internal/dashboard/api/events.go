@@ -2,11 +2,15 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ruanun/simple-server-status/internal/dashboard/incident"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 )
 
@@ -38,13 +42,13 @@ func parsePage(c *gin.Context) (limit, offset int, ok bool) {
 	return size, (page - 1) * size, true
 }
 
-// outageDuration 离线时长（秒）；进行中的按当前时间计算
-func (a *API) outageDuration(o store.Outage) int64 {
+// eventDuration 事件持续时长（秒）；进行中的按当前时间计算，瞬时事件为 0
+func (a *API) eventDuration(e store.Event) int64 {
 	end := a.Now().Unix()
-	if o.EndAt != nil {
-		end = *o.EndAt
+	if e.EndAt != nil {
+		end = *e.EndAt
 	}
-	return max(0, end-o.StartAt)
+	return max(0, end-e.StartAt)
 }
 
 type publicOutage struct {
@@ -53,11 +57,15 @@ type publicOutage struct {
 	Duration int64  `json:"duration"`
 }
 
-type adminOutage struct {
-	ID         int64  `json:"id"`
-	ServerID   string `json:"server_id"`
-	ServerName string `json:"server_name"`
-	publicOutage
+type adminEvent struct {
+	ID         int64           `json:"id"`
+	ServerID   string          `json:"server_id"`
+	ServerName string          `json:"server_name"`
+	Kind       string          `json:"kind"`
+	StartAt    int64           `json:"start_at"`
+	EndAt      *int64          `json:"end_at"`
+	Duration   int64           `json:"duration"`
+	Detail     json.RawMessage `json:"detail"`
 }
 
 func (a *API) publicOutages(c *gin.Context) {
@@ -65,36 +73,56 @@ func (a *API) publicOutages(c *gin.Context) {
 	if !found {
 		return
 	}
-	list, _, err := a.Store.ListOutages(c.Request.Context(), srv.ID, publicOutageLimit, 0)
+	list, _, err := a.Store.ListEvents(c.Request.Context(), store.EventFilter{ServerID: srv.ID, Kinds: []string{incident.KindOffline}}, publicOutageLimit, 0)
 	if err != nil {
 		a.internal(c, "读取离线记录失败", err)
 		return
 	}
 	out := make([]publicOutage, 0, len(list))
-	for _, o := range list {
-		out = append(out, publicOutage{StartAt: o.StartAt, EndAt: o.EndAt, Duration: a.outageDuration(o)})
+	for _, e := range list {
+		out = append(out, publicOutage{StartAt: e.StartAt, EndAt: e.EndAt, Duration: a.eventDuration(e)})
 	}
 	respond(c, out)
 }
 
-func (a *API) adminOutages(c *gin.Context) {
+// parseKinds 解析逗号分隔的事件类型；含未知类型时已输出 400
+func parseKinds(c *gin.Context) ([]string, bool) {
+	var kinds []string
+	for k := range strings.SplitSeq(c.Query("kind"), ",") {
+		if k = strings.TrimSpace(k); k == "" {
+			continue
+		}
+		if !slices.Contains(incident.Kinds, k) {
+			fail(c, http.StatusBadRequest, "invalid_input", "事件类型无效")
+			return nil, false
+		}
+		kinds = append(kinds, k)
+	}
+	return kinds, true
+}
+
+func (a *API) adminEvents(c *gin.Context) {
 	limit, offset, ok := parsePage(c)
 	if !ok {
 		return
 	}
-	list, total, err := a.Store.ListOutages(c.Request.Context(), c.Query("server_id"), limit, offset)
-	if err != nil {
-		a.internal(c, "读取离线记录失败", err)
+	kinds, ok := parseKinds(c)
+	if !ok {
 		return
 	}
-	items := make([]adminOutage, 0, len(list))
-	for _, o := range list {
+	list, total, err := a.Store.ListEvents(c.Request.Context(), store.EventFilter{ServerID: c.Query("server_id"), Kinds: kinds}, limit, offset)
+	if err != nil {
+		a.internal(c, "读取事件失败", err)
+		return
+	}
+	items := make([]adminEvent, 0, len(list))
+	for _, e := range list {
 		name := ""
-		if srv, found := a.server(o.ServerID); found {
+		if srv, found := a.server(e.ServerID); found {
 			name = srv.Name
 		}
-		items = append(items, adminOutage{ID: o.ID, ServerID: o.ServerID, ServerName: name,
-			publicOutage: publicOutage{StartAt: o.StartAt, EndAt: o.EndAt, Duration: a.outageDuration(o)}})
+		items = append(items, adminEvent{ID: e.ID, ServerID: e.ServerID, ServerName: name, Kind: e.Kind,
+			StartAt: e.StartAt, EndAt: e.EndAt, Duration: a.eventDuration(e), Detail: e.Detail})
 	}
 	respond(c, gin.H{"items": items, "total": total})
 }
@@ -119,15 +147,15 @@ func (a *API) adminNotifyLog(c *gin.Context) {
 	respond(c, gin.H{"items": list, "total": total})
 }
 
-// cleanupEvents 删除保留期之前的离线记录与通知记录，以及所属服务器已删除的记录
-// （删除服务器与离线检查、通知发送并发时可能在删除之后写入）
+// cleanupEvents 删除保留期之前的事件与通知记录，以及所属服务器已删除的记录
+// （删除服务器与事件检测、通知发送并发时可能在删除之后写入）
 func (a *API) cleanupEvents(ctx context.Context) {
 	cut := a.Now().Add(-eventRetention).Unix()
-	if _, err := a.Store.DeleteOutagesBefore(ctx, cut); err != nil {
-		a.Log.Warn("清理离线记录失败", "err", err)
+	if _, err := a.Store.DeleteEventsBefore(ctx, cut); err != nil {
+		a.Log.Warn("清理事件失败", "err", err)
 	}
-	if _, err := a.Store.DeleteOrphanOutages(ctx); err != nil {
-		a.Log.Warn("清理孤儿离线记录失败", "err", err)
+	if _, err := a.Store.DeleteOrphanEvents(ctx); err != nil {
+		a.Log.Warn("清理孤儿事件失败", "err", err)
 	}
 	if _, err := a.Store.DeleteNotifyLogBefore(ctx, cut); err != nil {
 		a.Log.Warn("清理通知记录失败", "err", err)

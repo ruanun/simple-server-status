@@ -1,6 +1,6 @@
 import { api } from './api'
 import type {
-  AdminOutage,
+  AdminEvent,
   AdminServer,
   CaptchaChallenge,
   LoginInput,
@@ -55,8 +55,8 @@ export const adminApi = {
   // captcha_kept：文件中的 Turnstile 配置未经核验，保留了当前的验证码设置
   importData: (file: unknown) => api.post<{ servers: number; captcha_kept?: boolean }>('/api/admin/import', file),
   overview: () => api.get<Overview>('/api/admin/overview'),
-  outages: (q: { server?: string; page: number }) =>
-    api.get<Paged<AdminOutage>>(`/api/admin/outages?${qs({ server_id: q.server, page: q.page, size: 50 })}`),
+  events: (q: { server?: string; kind?: string; page: number }) =>
+    api.get<Paged<AdminEvent>>(`/api/admin/events?${qs({ server_id: q.server, kind: q.kind, page: q.page, size: 50 })}`),
   notifyLog: (q: { server?: string; status?: string; page: number }) =>
     api.get<Paged<NotifyLogItem>>(`/api/admin/notify-log?${qs({ server_id: q.server, status: q.status, page: q.page, size: 50 })}`),
 }

@@ -21,10 +21,8 @@ const NOTIFY: NotifySettings = {
   offline_enabled: true,
   offline_minutes: 3,
   load_enabled: true,
-  load_cpu: 90,
-  load_mem: 90,
-  load_disk: 90,
-  load_minutes: 5,
+  reboot_enabled: true,
+  ip_change_enabled: true,
   expire_enabled: true,
   expire_days: 7,
   traffic_enabled: true,
@@ -37,6 +35,7 @@ const SETTINGS: Settings = {
   install_script_base: 'https://example.com/dl',
   announcement: '',
   notify: NOTIFY,
+  events: { load_cpu: 90, load_mem: 90, load_disk: 90, load_minutes: 5 },
   captcha: { mode: 'none', turnstile_site_key: '', turnstile_secret: '' },
 }
 
@@ -220,6 +219,21 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(saved).toMatchObject({ site_title: 'Simple Server Status', notify: { webhook_url: 'https://hook.example.com/x', offline_minutes: 10 } }))
   })
 
+  it('检测规则可保存，只覆盖检测规则字段', async () => {
+    let saved: unknown
+    mockFetch({
+      'GET /api/admin/settings': SETTINGS,
+      'PUT /api/admin/settings': (body: unknown) => ((saved = body), { data: body }),
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<SettingsPage />, { route: '/admin/settings?tab=rules', path: '/admin/settings' })
+    const cpu = await screen.findByLabelText('CPU（%）')
+    await user.clear(cpu)
+    await user.type(cpu, '80')
+    await user.click(screen.getByRole('button', { name: '保存检测规则' }))
+    await waitFor(() => expect(saved).toMatchObject({ notify: NOTIFY, events: { load_cpu: 80, load_mem: 90, load_minutes: 5 } }))
+  })
+
   it('两个表单互不吞掉未保存的编辑', async () => {
     let current: Settings = SETTINGS
     const saves: Settings[] = []
@@ -300,7 +314,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<SettingsPage />, { route: '/admin/settings', path: '/admin/settings' })
     expect(await screen.findByRole('tab', { name: '站点' })).toHaveAttribute('aria-selected', 'true')
-    for (const name of ['通知', '账号与安全', '备份']) {
+    for (const name of ['检测规则', '通知', '账号与安全', '备份']) {
       expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'false')
     }
     await user.click(screen.getByRole('tab', { name: '备份' }))

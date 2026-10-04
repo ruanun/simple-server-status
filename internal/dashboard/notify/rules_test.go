@@ -1,10 +1,11 @@
 package notify
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/ruanun/simple-server-status/internal/dashboard/metric"
+	"github.com/ruanun/simple-server-status/internal/dashboard/incident"
 	"github.com/ruanun/simple-server-status/internal/dashboard/store"
 )
 
@@ -32,86 +33,11 @@ func eq(a, b []string) bool {
 	return true
 }
 
-func ring(now time.Time, cpu float64, n int) []metric.Point {
-	pts := []metric.Point{}
-	for i := 0; i < n; i++ {
-		pts = append(pts, metric.Point{TS: now.Add(-time.Duration(i) * 30 * time.Second).Unix(), CPU: cpu, Mem: 10, Disk: 10})
-	}
-	return pts
-}
-
-func TestOfflineAndRecovery(t *testing.T) {
+func TestRemindersMuted(t *testing.T) {
 	cfg := store.DefaultNotifySettings()
-	st := &State{}
-	o := Observation{ID: "s", Name: "hk", Online: false, LastSeen: t0.Add(-2 * time.Minute).Unix()}
-	if es := Evaluate(t0, cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("离线未满 3 分钟不应通知 %v", kinds(es))
-	}
-	o.LastSeen = t0.Add(-4 * time.Minute).Unix()
-	es := Evaluate(t0, cfg, o, st, false, never)
-	if !eq(kinds(es), []string{KindOffline}) || es[0].Minutes != 4 || !st.Offline {
-		t.Fatalf("应发送离线通知 %+v", es)
-	}
-	if es := Evaluate(t0.Add(time.Minute), cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("已告警不应重复 %v", kinds(es))
-	}
-	o.Online = true
-	es = Evaluate(t0.Add(10*time.Minute), cfg, o, st, false, never)
-	if !eq(kinds(es), []string{KindRecovered}) || es[0].Minutes != 14 || st.Offline {
-		t.Fatalf("应发送恢复通知 %+v", es)
-	}
-}
-
-func TestBaselineSuppressesOfflineAndLoad(t *testing.T) {
-	cfg := store.DefaultNotifySettings()
-	st := &State{}
-	o := Observation{ID: "s", Online: false, LastSeen: t0.Add(-time.Hour).Unix()}
-	if es := Evaluate(t0, cfg, o, st, true, never); len(es) != 0 || !st.Offline {
-		t.Fatalf("首轮只建立基线 %v %+v", kinds(es), st)
-	}
-	if es := Evaluate(t0.Add(30*time.Second), cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("基线后仍离线不应补发 %v", kinds(es))
-	}
-	o2 := Observation{ID: "x", Online: true, LastSeen: t0.Unix(), Ring: ring(t0, 99, 10)}
-	st2 := &State{}
-	if es := Evaluate(t0, cfg, o2, st2, true, never); len(es) != 0 || !st2.Load {
-		t.Fatalf("首轮高负载只建立基线 %v", kinds(es))
-	}
-}
-
-func TestNeverSeenAndMuted(t *testing.T) {
-	cfg := store.DefaultNotifySettings()
-	if es := Evaluate(t0, cfg, Observation{ID: "s"}, &State{}, false, never); len(es) != 0 {
-		t.Fatalf("从未上报不参与离线判断 %v", kinds(es))
-	}
 	exp := t0.Add(24 * time.Hour).Unix()
-	o := Observation{ID: "s", Muted: true, LastSeen: t0.Add(-time.Hour).Unix(), ExpireAt: &exp}
-	if es := Evaluate(t0, cfg, o, &State{}, false, never); len(es) != 0 || len(marksOf(es)) != 0 {
-		t.Fatalf("静音服务器不产生任何事件 %v", kinds(es))
-	}
-}
-
-func TestLoadRule(t *testing.T) {
-	cfg := store.DefaultNotifySettings()
-	st := &State{}
-	o := Observation{ID: "s", Online: true, LastSeen: t0.Unix(), Ring: ring(t0, 95, 1)}
-	if es := Evaluate(t0, cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("点数不足 2 不判断 %v", kinds(es))
-	}
-	o.Ring = ring(t0, 95, 10)
-	es := Evaluate(t0, cfg, o, st, false, never)
-	if !eq(kinds(es), []string{KindLoad}) || len(es[0].Loads) != 1 || es[0].Loads[0] != (LoadValue{Metric: "cpu", Value: 95}) || es[0].Minutes != 5 {
-		t.Fatalf("应发送高负载通知 %+v", es)
-	}
-	o.Ring = append(ring(t0.Add(time.Minute), 20, 10), ring(t0.Add(-10*time.Minute), 99, 5)...) // 窗口外的高值不计入
-	es = Evaluate(t0.Add(time.Minute), cfg, o, st, false, never)
-	if !eq(kinds(es), []string{KindLoadRecovered}) || st.Load {
-		t.Fatalf("应发送负载恢复通知 %+v", es)
-	}
-	cfg.LoadEnabled = false
-	st.Load = true
-	if es := Evaluate(t0, cfg, o, st, false, never); len(es) != 0 || st.Load {
-		t.Fatalf("关闭规则时静默清除状态 %v", kinds(es))
+	if es := Reminders(t0, cfg, Observation{ID: "s", Muted: true, ExpireAt: &exp}, never); len(es) != 0 {
+		t.Fatalf("静音服务器不提醒 %v", kinds(es))
 	}
 }
 
@@ -121,75 +47,71 @@ func TestExpireAndTrafficOnce(t *testing.T) {
 	sent := func(rule, key string) bool { return sentKeys[rule+":"+key] }
 	exp := t0.Add(3*24*time.Hour + time.Hour).Unix() // 剩余 4 天（向上取整）
 	limit := int64(1000)
-	o := Observation{ID: "s", Online: true, LastSeen: t0.Unix(), ExpireAt: &exp, TrafficUsed: 950, TrafficLimit: &limit, Period: "2026-09-01"}
-	es := Evaluate(t0, cfg, o, &State{}, true, sent) // 一次性提醒不受首轮基线影响
+	o := Observation{ID: "s", ExpireAt: &exp, TrafficUsed: 950, TrafficLimit: &limit, Period: "2026-09-01"}
+	es := Reminders(t0, cfg, o, sent)
 	if !eq(kinds(es), []string{KindExpire, KindTraffic}) || es[0].Days != 4 || es[1].Percent != 95 || len(marksOf(es)) != 2 {
 		t.Fatalf("应提醒到期与流量 %+v %+v", es, marksOf(es))
 	}
 	for _, m := range marksOf(es) {
 		sentKeys[m.Rule+":"+m.Key] = true
 	}
-	if es := Evaluate(t0.Add(time.Hour), cfg, o, &State{}, false, sent); len(es) != 0 {
+	if es := Reminders(t0.Add(time.Hour), cfg, o, sent); len(es) != 0 {
 		t.Fatalf("同一到期日、同一周期只提醒一次 %v", kinds(es))
 	}
 	exp2 := exp + 86400 // 续费改了到期日
 	o.ExpireAt = &exp2
-	if es := Evaluate(t0, cfg, o, &State{}, false, sent); !eq(kinds(es), []string{KindExpire}) {
+	if es := Reminders(t0, cfg, o, sent); !eq(kinds(es), []string{KindExpire}) {
 		t.Fatalf("修改到期日后应重新提醒 %v", kinds(es))
 	}
 	o.ExpireAt = nil
 	o.TrafficUsed = 899
 	o.Period = "2026-10-01"
-	if es := Evaluate(t0, cfg, o, &State{}, false, sent); len(es) != 0 {
+	if es := Reminders(t0, cfg, o, sent); len(es) != 0 {
 		t.Fatalf("未达阈值不提醒 %v", kinds(es))
-	}
-}
-
-func TestMutedStillTracksState(t *testing.T) {
-	cfg := store.DefaultNotifySettings()
-	st := &State{}
-	o := Observation{ID: "s", Online: false, LastSeen: t0.Add(-10 * time.Minute).Unix()}
-	if es := Evaluate(t0, cfg, o, st, false, never); !eq(kinds(es), []string{KindOffline}) {
-		t.Fatalf("应发送离线通知 %v", kinds(es))
-	}
-	// 静音期间恢复：只更新状态
-	o.Muted, o.Online, o.LastSeen = true, true, t0.Add(time.Minute).Unix()
-	if es := Evaluate(t0.Add(time.Minute), cfg, o, st, false, never); len(es) != 0 || len(marksOf(es)) != 0 || st.Offline {
-		t.Fatalf("静音期间只更新状态 %v %+v", kinds(es), st)
-	}
-	// 取消静音后不补发恢复
-	o.Muted = false
-	if es := Evaluate(t0.Add(2*time.Minute), cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("取消静音后不应补发恢复 %v", kinds(es))
-	}
-	// 静音期间离线：记录状态，取消静音后仍离线不补发离线
-	o.Muted, o.Online = true, false
-	if es := Evaluate(t0.Add(10*time.Minute), cfg, o, st, false, never); len(es) != 0 || !st.Offline {
-		t.Fatalf("静音期间离线应记录状态 %v %+v", kinds(es), st)
-	}
-	o.Muted = false
-	if es := Evaluate(t0.Add(11*time.Minute), cfg, o, st, false, never); len(es) != 0 {
-		t.Fatalf("取消静音后仍离线不应补发 %v", kinds(es))
-	}
-	// 静音期间高负载也只建立状态
-	o2 := Observation{ID: "x", Muted: true, Online: true, LastSeen: t0.Unix(), Ring: ring(t0, 99, 10)}
-	st2 := &State{}
-	if es := Evaluate(t0, cfg, o2, st2, false, never); len(es) != 0 || !st2.Load {
-		t.Fatalf("静音期间高负载只建立状态 %v %+v", kinds(es), st2)
 	}
 }
 
 func TestExpireSkipsLongExpired(t *testing.T) {
 	cfg := store.DefaultNotifySettings()
 	old := t0.Add(-31 * 24 * time.Hour).Unix()
-	o := Observation{ID: "s", Online: true, LastSeen: t0.Unix(), ExpireAt: &old}
-	if es := Evaluate(t0, cfg, o, &State{}, false, never); len(es) != 0 || len(marksOf(es)) != 0 {
+	o := Observation{ID: "s", ExpireAt: &old}
+	if es := Reminders(t0, cfg, o, never); len(es) != 0 {
 		t.Fatalf("过期超过 30 天不提醒 %v", kinds(es))
 	}
 	recent := t0.Add(-30 * 24 * time.Hour).Unix()
 	o.ExpireAt = &recent
-	if es := Evaluate(t0, cfg, o, &State{}, false, never); !eq(kinds(es), []string{KindExpire}) || es[0].Days != -30 {
+	if es := Reminders(t0, cfg, o, never); !eq(kinds(es), []string{KindExpire}) || es[0].Days != -30 {
 		t.Fatalf("过期 30 天内应提醒 %+v", es)
+	}
+}
+
+func TestFromIncident(t *testing.T) {
+	srv := store.Server{ID: "s", Name: "hk"}
+	end := t0.Unix()
+	start := t0.Add(-75 * time.Minute).Unix()
+	offline := store.Event{ID: 1, ServerID: "s", Kind: incident.KindOffline, StartAt: start}
+	if e := fromIncident(offline, srv, t0, false); e.Kind != KindOffline || e.Minutes != 75 || e.EventID != 1 || e.ServerName != "hk" {
+		t.Fatalf("离线 %+v", e)
+	}
+	offline.EndAt = &end
+	if e := fromIncident(offline, srv, t0, true); e.Kind != KindRecovered || e.Minutes != 75 {
+		t.Fatalf("恢复 %+v", e)
+	}
+	detail, _ := json.Marshal(incident.LoadDetail{Threshold: 90, Minutes: 5, Peak: 97.5})
+	load := store.Event{ID: 2, ServerID: "s", Kind: incident.KindLoadMem, StartAt: start, Detail: detail}
+	if e := fromIncident(load, srv, t0, false); e.Kind != KindLoad || e.Minutes != 5 || e.Load != (LoadValue{"mem", 97.5}) {
+		t.Fatalf("高负载 %+v", e)
+	}
+	if e := fromIncident(load, srv, t0, true); e.Kind != KindLoadRecovered || e.Load.Metric != "mem" {
+		t.Fatalf("负载恢复 %+v", e)
+	}
+	reboot := store.Event{ServerID: "s", Kind: incident.KindReboot, Detail: json.RawMessage(`{"boot_at":123}`)}
+	if e := fromIncident(reboot, srv, t0, false); e.Kind != KindReboot || e.BootAt != 123 {
+		t.Fatalf("重启 %+v", e)
+	}
+	ip := store.Event{ServerID: "s", Kind: incident.KindIPChange, Detail: json.RawMessage(`{"ipv4":["1.1.1.1","2.2.2.2"]}`)}
+	if e := fromIncident(ip, srv, t0, false); e.Kind != KindIPChange || e.IPs["ipv4"] != [2]string{"1.1.1.1", "2.2.2.2"} {
+		t.Fatalf("IP 变化 %+v", e)
 	}
 }
 

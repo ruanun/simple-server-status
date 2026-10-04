@@ -109,14 +109,20 @@ export interface NotifySettings {
   offline_enabled: boolean
   offline_minutes: number
   load_enabled: boolean
-  load_cpu: number
-  load_mem: number
-  load_disk: number
-  load_minutes: number
+  reboot_enabled: boolean
+  ip_change_enabled: boolean
   expire_enabled: boolean
   expire_days: number
   traffic_enabled: boolean
   traffic_percent: number
+}
+
+/** EventSettings 检测规则：决定是否记录事件，与通知渠道无关 */
+export interface EventSettings {
+  load_cpu: number
+  load_mem: number
+  load_disk: number
+  load_minutes: number
 }
 
 export interface NotifyTestResult {
@@ -139,6 +145,7 @@ export interface Settings {
   install_script_base: string
   announcement: string
   notify: NotifySettings
+  events: EventSettings
   captcha: CaptchaSettings
 }
 
@@ -226,13 +233,28 @@ export interface PublicOutage {
   duration: number
 }
 
-export interface AdminOutage {
+export type EventKind = 'offline' | 'load_cpu' | 'load_mem' | 'load_disk' | 'reboot' | 'ip_change'
+
+/** AdminEvent 后台事件；时段事件进行中时 end_at 为 null，瞬时事件 end_at 等于 start_at、duration 为 0 */
+export interface AdminEvent {
   id: number
   server_id: string
   server_name: string
+  kind: EventKind
   start_at: number
   end_at: number | null
   duration: number
+  detail: EventDetail
+}
+
+/** EventDetail 按类型不同：负载为阈值、统计分钟数与峰值，重启为开机时间，IP 变化为 [旧, 新] */
+export interface EventDetail {
+  threshold?: number
+  minutes?: number
+  peak?: number
+  boot_at?: number
+  ipv4?: [string, string]
+  ipv6?: [string, string]
 }
 
 export type NotifyLogStatus = 'pending' | 'sent' | 'failed'
@@ -241,6 +263,7 @@ export interface NotifyLogItem {
   id: number
   server_id: string
   server_name: string
+  event_id: number | null
   kind: string
   channel: string
   title: string

@@ -15,23 +15,21 @@ const DefaultInstallScriptBase = "https://github.com/ruanun/simple-server-status
 // ReleaseDownloadBase 指定版本 Release 资产的下载地址前缀，后接版本标签（如 v2.0.0）
 const ReleaseDownloadBase = "https://github.com/ruanun/simple-server-status/releases/download/"
 
-// NotifySettings 通知设置：渠道（为空表示不启用）与四条规则的开关、阈值
+// NotifySettings 通知设置：渠道（为空表示不启用）、各类事件与提醒的推送开关及通知维度的条件
 type NotifySettings struct {
-	WebhookURL     string `json:"webhook_url"`
-	TelegramToken  string `json:"telegram_token"`
-	TelegramChatID string `json:"telegram_chat_id"`
-	Lang           string `json:"lang"`
-	OfflineEnabled bool   `json:"offline_enabled"`
-	OfflineMinutes int    `json:"offline_minutes"`
-	LoadEnabled    bool   `json:"load_enabled"`
-	LoadCPU        int    `json:"load_cpu"`
-	LoadMem        int    `json:"load_mem"`
-	LoadDisk       int    `json:"load_disk"`
-	LoadMinutes    int    `json:"load_minutes"`
-	ExpireEnabled  bool   `json:"expire_enabled"`
-	ExpireDays     int    `json:"expire_days"`
-	TrafficEnabled bool   `json:"traffic_enabled"`
-	TrafficPercent int    `json:"traffic_percent"`
+	WebhookURL      string `json:"webhook_url"`
+	TelegramToken   string `json:"telegram_token"`
+	TelegramChatID  string `json:"telegram_chat_id"`
+	Lang            string `json:"lang"`
+	OfflineEnabled  bool   `json:"offline_enabled"`
+	OfflineMinutes  int    `json:"offline_minutes"` // 离线持续多久才推送
+	LoadEnabled     bool   `json:"load_enabled"`
+	RebootEnabled   bool   `json:"reboot_enabled"`
+	IPChangeEnabled bool   `json:"ip_change_enabled"`
+	ExpireEnabled   bool   `json:"expire_enabled"`
+	ExpireDays      int    `json:"expire_days"`
+	TrafficEnabled  bool   `json:"traffic_enabled"`
+	TrafficPercent  int    `json:"traffic_percent"`
 }
 
 // DefaultNotifySettings 默认通知设置：规则全部开启，渠道未配置
@@ -39,10 +37,23 @@ func DefaultNotifySettings() NotifySettings {
 	return NotifySettings{
 		Lang:           "zh-CN",
 		OfflineEnabled: true, OfflineMinutes: 3,
-		LoadEnabled: true, LoadCPU: 90, LoadMem: 90, LoadDisk: 90, LoadMinutes: 5,
+		LoadEnabled: true, RebootEnabled: true, IPChangeEnabled: true,
 		ExpireEnabled: true, ExpireDays: 7,
 		TrafficEnabled: true, TrafficPercent: 90,
 	}
+}
+
+// EventSettings 检测规则：决定是否记录事件，与是否配置通知渠道无关
+type EventSettings struct {
+	LoadCPU     int `json:"load_cpu"`
+	LoadMem     int `json:"load_mem"`
+	LoadDisk    int `json:"load_disk"`
+	LoadMinutes int `json:"load_minutes"` // 负载按最近多少分钟的平均值判断
+}
+
+// DefaultEventSettings 默认检测规则
+func DefaultEventSettings() EventSettings {
+	return EventSettings{LoadCPU: 90, LoadMem: 90, LoadDisk: 90, LoadMinutes: 5}
 }
 
 // 登录验证码模式
@@ -67,6 +78,7 @@ type Settings struct {
 	InstallScriptBase     string          `json:"install_script_base"`
 	Announcement          string          `json:"announcement"`
 	Notify                NotifySettings  `json:"notify"`
+	Events                EventSettings   `json:"events"`
 	Captcha               CaptchaSettings `json:"captcha"`
 }
 
@@ -77,6 +89,7 @@ func DefaultSettings() Settings {
 		DefaultReportInterval: 2,
 		InstallScriptBase:     DefaultInstallScriptBase,
 		Notify:                DefaultNotifySettings(),
+		Events:                DefaultEventSettings(),
 		Captcha:               CaptchaSettings{Mode: CaptchaNone},
 	}
 }
@@ -88,7 +101,7 @@ type settingField struct {
 }
 
 func settingFields(st *Settings) []settingField {
-	n := &st.Notify
+	n, ev := &st.Notify, &st.Events
 	return []settingField{
 		{"site_title", &st.SiteTitle},
 		{"show_price", &st.ShowPrice},
@@ -102,14 +115,16 @@ func settingFields(st *Settings) []settingField {
 		{"notify_offline_enabled", &n.OfflineEnabled},
 		{"notify_offline_minutes", &n.OfflineMinutes},
 		{"notify_load_enabled", &n.LoadEnabled},
-		{"notify_load_cpu", &n.LoadCPU},
-		{"notify_load_mem", &n.LoadMem},
-		{"notify_load_disk", &n.LoadDisk},
-		{"notify_load_minutes", &n.LoadMinutes},
+		{"notify_reboot_enabled", &n.RebootEnabled},
+		{"notify_ip_change_enabled", &n.IPChangeEnabled},
 		{"notify_expire_enabled", &n.ExpireEnabled},
 		{"notify_expire_days", &n.ExpireDays},
 		{"notify_traffic_enabled", &n.TrafficEnabled},
 		{"notify_traffic_percent", &n.TrafficPercent},
+		{"event_load_cpu", &ev.LoadCPU},
+		{"event_load_mem", &ev.LoadMem},
+		{"event_load_disk", &ev.LoadDisk},
+		{"event_load_minutes", &ev.LoadMinutes},
 		{"captcha_mode", &st.Captcha.Mode},
 		{"captcha_turnstile_site_key", &st.Captcha.TurnstileSiteKey},
 		{"captcha_turnstile_secret", &st.Captcha.TurnstileSecret},

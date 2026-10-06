@@ -35,7 +35,7 @@ func TestOpenMigratesIdempotently(t *testing.T) {
 	}
 	defer s.Close()
 	var v int
-	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 4 {
+	if err := s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil || v != 5 {
 		t.Fatalf("schema_version = %d, %v", v, err)
 	}
 }
@@ -174,11 +174,8 @@ func TestStaticInfoAndLastSeen(t *testing.T) {
 	if err := s.SetLastSeen(ctx, a.ID, 123); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetBootAt(ctx, a.ID, 99); err != nil {
-		t.Fatal(err)
-	}
 	got, _ := s.GetServer(ctx, a.ID)
-	if got.StaticInfo == nil || got.StaticInfo.OS != "linux" || got.LastIP != "1.2.3.4" || got.LastSeen != 123 || got.BootAt != 99 {
+	if got.StaticInfo == nil || got.StaticInfo.OS != "linux" || got.LastIP != "1.2.3.4" || got.LastSeen != 123 {
 		t.Fatalf("静态信息错误: %+v", got)
 	}
 }

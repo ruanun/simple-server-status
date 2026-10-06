@@ -105,8 +105,8 @@ func TestFromIncident(t *testing.T) {
 	if e := fromIncident(load, srv, t0, true); e.Kind != KindLoadRecovered || e.Load.Metric != "mem" {
 		t.Fatalf("负载恢复 %+v", e)
 	}
-	reboot := store.Event{ServerID: "s", Kind: incident.KindReboot, Detail: json.RawMessage(`{"boot_at":123}`)}
-	if e := fromIncident(reboot, srv, t0, false); e.Kind != KindReboot || e.BootAt != 123 {
+	reboot := store.Event{ServerID: "s", Kind: incident.KindReboot}
+	if e := fromIncident(reboot, srv, t0, false); e.Kind != KindReboot || e.ServerName != "hk" {
 		t.Fatalf("重启 %+v", e)
 	}
 	ip := store.Event{ServerID: "s", Kind: incident.KindIPChange, Detail: json.RawMessage(`{"ipv4":["1.1.1.1","2.2.2.2"]}`)}

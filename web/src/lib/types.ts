@@ -247,12 +247,11 @@ export interface AdminEvent {
   detail: EventDetail
 }
 
-/** EventDetail 按类型不同：负载为阈值、统计分钟数与峰值，重启为开机时间，IP 变化为 [旧, 新] */
+/** EventDetail 按类型不同：负载为阈值、统计分钟数与峰值，IP 变化为 [旧, 新]；离线与重启为空 */
 export interface EventDetail {
   threshold?: number
   minutes?: number
   peak?: number
-  boot_at?: number
   ipv4?: [string, string]
   ipv6?: [string, string]
 }

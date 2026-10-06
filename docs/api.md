@@ -74,7 +74,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 | `last_seen` | 最近一次上报（或断开）时间 |
 | `uptime_24h` | 最近 24 小时在线率（百分比，0–100，保留 1 位小数）；窗口不足一个采样周期或服务器刚创建时为 `null`，每分钟随维护任务刷新一次 |
 | `ipv4`、`ipv6` | 是否探测到对应公网地址的布尔标记（地址本身不返回）；从未连接或 Agent 未上报时为 `false` |
-| `static` | 静态信息，结构同 Agent 的 `hello`，但 `agent_version` 与 `ipv4`、`ipv6` 地址始终为空（Agent 版本只在后台服务器列表中提供，IP 地址是否存在见上面的 `ipv4`/`ipv6` 标记）；从未连接过时为 `null` |
+| `static` | 静态信息，结构同 Agent 的 `hello`，但 `agent_version`、`ipv4`、`ipv6` 地址与 `boot_id` 始终为空（Agent 版本只在后台服务器列表中提供，IP 地址是否存在见上面的 `ipv4`/`ipv6` 标记）；从未连接过时为 `null` |
 | `metrics` | 最新一次上报，结构同 Agent 的 `report`（不含 `filter_id`）；无数据时为 `null` |
 | `traffic` | 当前周期流量：`in`、`out`、`used`（按 `mode` 计算）、`limit`（`null` 表示不限）、`mode`（`sum`/`in`/`out`）、`reset_day`、`period`（周期起始日 `YYYY-MM-DD`） |
 | `expire_at` | 到期时间，`null` 表示长期 |
@@ -252,7 +252,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
 |---|---|---|
 | `offline` | 时段 | `{}` |
 | `load_cpu`、`load_mem`、`load_disk` | 时段 | `threshold` 阈值、`minutes` 统计分钟数、`peak` 事件期间窗口平均值的最大值 |
-| `reboot` | 瞬时 | `boot_at` 开机时间 |
+| `reboot` | 瞬时 | `{}` |
 | `ip_change` | 瞬时 | `ipv4`、`ipv6`：`[旧地址, 新地址]`，只包含变化的一项 |
 
 时段事件进行中时 `end_at` 为 `null`，`duration` 按当前时间计算；瞬时事件 `end_at` 等于 `start_at`，`duration` 为 0。
@@ -318,7 +318,7 @@ ID 不存在或密钥错误时返回 HTTP 401，Agent 随后每 5 分钟重试�
 
 | 方向 | type | data |
 |---|---|---|
-| Agent → Dashboard | `hello` | 静态信息：`os`、`platform`、`platform_version`、`kernel`、`arch`、`virtualization`、`cpu_model`、`cpu_cores`、`mem_total`、`swap_total`、`disk_total`、`agent_version`、`country`、`ipv4`、`ipv6` |
+| Agent → Dashboard | `hello` | 静态信息：`os`、`platform`、`platform_version`、`kernel`、`arch`、`virtualization`、`cpu_model`、`cpu_cores`、`mem_total`、`swap_total`、`disk_total`、`agent_version`、`country`、`ipv4`、`ipv6`、`boot_id`（本次开机的唯一标识：Linux 为 `/proc/sys/kernel/random/boot_id`，Windows 为每次开机加一的启动计数，macOS 为 `kern.bootsessionuuid`，其他平台为空） |
 | Dashboard → Agent | `config` | 采集参数：`report_interval`（秒）、`nic_include`、`nic_exclude`、`mount_exclude`、`filter_id` |
 | Agent → Dashboard | `report` | 动态指标，见下表 |
 | Dashboard → Agent | `stop` | `{"reason": "deleted"}`：服务器已被删除，Agent 收到后退出进程且不再重连 |

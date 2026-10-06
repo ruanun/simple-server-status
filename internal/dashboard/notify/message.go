@@ -35,9 +35,8 @@ func Render(e *Event, lang string) {
 		e.Message = pick(fmt.Sprintf("服务器 %s 最近 %d 分钟的%s负载已恢复正常", name, e.Minutes, metricLabel(e.Load.Metric, false)),
 			fmt.Sprintf("Server %s %s load is back to normal over the last %d minutes", name, metricLabel(e.Load.Metric, true), e.Minutes))
 	case KindReboot:
-		at := time.Unix(e.BootAt, 0).Format(time.DateTime)
 		e.Title = pick("[重启] ", "[Rebooted] ") + name
-		e.Message = pick(fmt.Sprintf("服务器 %s 已重启，开机时间 %s", name, at), fmt.Sprintf("Server %s has rebooted, booted at %s", name, at))
+		e.Message = pick(fmt.Sprintf("服务器 %s 已重启", name), fmt.Sprintf("Server %s has rebooted", name))
 	case KindIPChange:
 		e.Title = pick("[IP 变化] ", "[IP changed] ") + name
 		e.Message = pick(fmt.Sprintf("服务器 %s 的公网地址已变化：%s", name, ipChanges(e.IPs, false)),

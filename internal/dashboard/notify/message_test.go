@@ -8,7 +8,6 @@ import (
 
 func TestRender(t *testing.T) {
 	exp := time.Date(2026, 10, 3, 0, 0, 0, 0, time.Local).Unix()
-	boot := time.Date(2026, 10, 3, 8, 30, 0, 0, time.Local).Unix()
 	cases := []struct {
 		e     Event
 		lang  string
@@ -22,8 +21,8 @@ func TestRender(t *testing.T) {
 		{Event{Kind: KindLoad, ServerName: "hk", Minutes: 5, Load: LoadValue{"cpu", 95}}, "en-US", "[High load] hk", "Server hk has high average load over the last 5 minutes: CPU 95.0%"},
 		{Event{Kind: KindLoadRecovered, ServerName: "hk", Minutes: 5, Load: LoadValue{"cpu", 0}}, "en-US", "[Load recovered] hk", "Server hk CPU load is back to normal over the last 5 minutes"},
 		{Event{Kind: KindLoadRecovered, ServerName: "hk", Minutes: 5, Load: LoadValue{"mem", 0}}, "zh-CN", "[负载恢复] hk", "服务器 hk 最近 5 分钟的内存负载已恢复正常"},
-		{Event{Kind: KindReboot, ServerName: "hk", BootAt: boot}, "zh-CN", "[重启] hk", "服务器 hk 已重启，开机时间 2026-10-03 08:30:00"},
-		{Event{Kind: KindReboot, ServerName: "hk", BootAt: boot}, "en-US", "[Rebooted] hk", "Server hk has rebooted, booted at 2026-10-03 08:30:00"},
+		{Event{Kind: KindReboot, ServerName: "hk"}, "zh-CN", "[重启] hk", "服务器 hk 已重启"},
+		{Event{Kind: KindReboot, ServerName: "hk"}, "en-US", "[Rebooted] hk", "Server hk has rebooted"},
 		{Event{Kind: KindIPChange, ServerName: "hk", IPs: map[string][2]string{"ipv6": {"::1", "::2"}, "ipv4": {"1.1.1.1", "2.2.2.2"}}}, "zh-CN", "[IP 变化] hk", "服务器 hk 的公网地址已变化：IPv4 1.1.1.1 → 2.2.2.2、IPv6 ::1 → ::2"},
 		{Event{Kind: KindIPChange, ServerName: "hk", IPs: map[string][2]string{"ipv4": {"1.1.1.1", "2.2.2.2"}}}, "en-US", "[IP changed] hk", "Server hk public address changed: IPv4 1.1.1.1 → 2.2.2.2"},
 		{Event{Kind: KindExpire, ServerName: "hk", Days: 4, ExpireAt: exp}, "zh-CN", "[即将到期] hk", "服务器 hk 将在 4 天后到期（2026-10-03）"},

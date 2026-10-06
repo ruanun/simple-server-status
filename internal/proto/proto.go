@@ -45,6 +45,7 @@ type Hello struct {
 	Country         string `json:"country"`
 	IPv4            string `json:"ipv4,omitempty"`
 	IPv6            string `json:"ipv6,omitempty"`
+	BootID          string `json:"boot_id,omitempty"` // 本次开机的唯一标识，变化即重启；不支持的平台为空
 }
 
 // Config Dashboard 下发给 Agent 的采集参数

@@ -260,21 +260,22 @@ func TestLoadKeptWhileOffline(t *testing.T) {
 	}
 }
 
-func TestBootCheck(t *testing.T) {
+func TestRebooted(t *testing.T) {
+	old := &proto.Hello{BootID: "a"}
 	cases := []struct {
-		prev, boot     int64
-		save, rebooted bool
+		old  *proto.Hello
+		cur  string
+		want bool
 	}{
-		{0, 1000, true, false},     // 首次只记录
-		{1000, 1000, false, false}, // 未变
-		{1000, 1100, false, false}, // 误差内
-		{1000, 900, false, false},
-		{1000, 1200, true, true}, // 重启
-		{1000, 700, true, false}, // 开机时间提前（时钟调整），只更新
+		{nil, "a", false},            // 首次上报
+		{old, "a", false},            // 同一次开机
+		{old, "b", true},             // 重启
+		{old, "", false},             // 新的 Agent 不支持或读取失败
+		{&proto.Hello{}, "b", false}, // 旧版 Agent 升级后首次上报
 	}
-	for _, c := range cases {
-		if save, rebooted := BootCheck(c.prev, c.boot); save != c.save || rebooted != c.rebooted {
-			t.Errorf("BootCheck(%d, %d) = %v %v，期望 %v %v", c.prev, c.boot, save, rebooted, c.save, c.rebooted)
+	for i, c := range cases {
+		if got := Rebooted(c.old, proto.Hello{BootID: c.cur}); got != c.want {
+			t.Errorf("第 %d 个用例：得到 %v，期望 %v", i, got, c.want)
 		}
 	}
 }

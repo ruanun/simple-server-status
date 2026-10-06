@@ -37,7 +37,7 @@ func TestEventEndpoints(t *testing.T) {
 	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindOffline, StartAt: now - 60})
 	e.addEvent(t, store.Event{ServerID: hidden.ID, Kind: incident.KindOffline, StartAt: now - 60})
 	at := now - 30
-	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindReboot, StartAt: at, EndAt: &at, Detail: json.RawMessage(`{"boot_at":1}`)})
+	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindReboot, StartAt: at, EndAt: &at})
 	e.addEvent(t, store.Event{ServerID: s.ID, Kind: incident.KindLoadCPU, StartAt: now - 120, Detail: json.RawMessage(`{"peak":95}`)})
 
 	code, body := e.do("GET", "/api/public/servers/"+s.ID+"/outages", "", nil)
@@ -70,7 +70,7 @@ func TestEventEndpoints(t *testing.T) {
 	code, body = e.do("GET", "/api/admin/events?server_id="+s.ID, tok, nil)
 	all := decodeData[page](t, body)
 	if code != http.StatusOK || all.Total != 4 || all.Items[0].Kind != incident.KindReboot || all.Items[0].Duration != 0 ||
-		string(all.Items[0].Detail) != `{"boot_at":1}` || all.Items[0].ServerName != "hk" {
+		string(all.Items[0].Detail) != `{}` || all.Items[0].ServerName != "hk" {
 		t.Fatalf("后台事件错误 %d %+v", code, all)
 	}
 	code, body = e.do("GET", "/api/admin/events?server_id="+s.ID+"&kind=offline,load_cpu&size=1&page=3", tok, nil)

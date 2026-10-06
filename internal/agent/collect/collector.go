@@ -90,6 +90,11 @@ func (c *Collector) Static(version string) proto.Hello {
 		h.SwapTotal = sw.Total
 	}
 	_, h.DiskTotal, _ = c.disks()
+	if id, err := bootID(); err != nil {
+		c.warnf("boot_id", err)
+	} else {
+		h.BootID = id
+	}
 	return h
 }
 

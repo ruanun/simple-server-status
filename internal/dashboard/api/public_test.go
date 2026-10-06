@@ -152,9 +152,9 @@ func TestPublicWSSnapshotAndDelta(t *testing.T) {
 	}
 
 	e.api.Hub.Connect(s.ID, 2)
-	e.api.handleReport(ctx, s.ID, proto.Report{CPU: 77}, false)
+	e.api.handleReport(ctx, s.ID, proto.Report{CPU: 77})
 	e.api.Hub.Connect(h.ID, 2)
-	e.api.handleReport(ctx, h.ID, proto.Report{CPU: 1}, false)
+	e.api.handleReport(ctx, h.ID, proto.Report{CPU: 1})
 	e.api.bc.tick(ctx)
 
 	typ, list = readWS(t, conn)
@@ -286,7 +286,7 @@ func TestPublicViewHidesFilterID(t *testing.T) {
 	e := newTestEnv(t)
 	s := e.addServer(store.Server{Name: "a"})
 	e.api.Hub.Connect(s.ID, 2)
-	e.api.handleReport(context.Background(), s.ID, proto.Report{CPU: 1, FilterID: "abc123"}, false)
+	e.api.handleReport(context.Background(), s.ID, proto.Report{CPU: 1, FilterID: "abc123"})
 	_, body := e.do("GET", "/api/public/servers", "", nil)
 	if bytes.Contains(body, []byte("filter_id")) {
 		t.Fatalf("公开响应不应包含 filter_id: %s", body)
@@ -299,7 +299,7 @@ func TestPublicViewHidesFilterID(t *testing.T) {
 func TestPublicViewHidesAgentVersion(t *testing.T) {
 	e := newTestEnv(t)
 	live := e.addServer(store.Server{Name: "live"})
-	e.api.Hub.SetStatic(live.ID, proto.Hello{OS: "linux", AgentVersion: "2.0.0-beta.3"})
+	e.api.Hub.SetStatic(live.ID, proto.Hello{OS: "linux", AgentVersion: "2.0.0-beta.3", BootID: "secret-boot"})
 	stored := e.addServer(store.Server{Name: "stored"})
 	if err := e.st.SetStaticInfo(context.Background(), stored.ID, "1.2.3.4", proto.Hello{OS: "linux", AgentVersion: "2.0.0-beta.1"}); err != nil {
 		t.Fatal(err)
@@ -315,8 +315,8 @@ func TestPublicViewHidesAgentVersion(t *testing.T) {
 		{"/api/public/servers/" + stored.ID, tok},
 	} {
 		code, body := e.do("GET", req.path, req.token, nil)
-		if code != http.StatusOK || bytes.Contains(body, []byte("2.0.0-beta")) || !bytes.Contains(body, []byte(`"os":"linux"`)) {
-			t.Fatalf("%s 应保留静态信息但不含 Agent 版本: %d %s", req.path, code, body)
+		if code != http.StatusOK || bytes.Contains(body, []byte("2.0.0-beta")) || bytes.Contains(body, []byte("secret-boot")) || !bytes.Contains(body, []byte(`"os":"linux"`)) {
+			t.Fatalf("%s 应保留静态信息但不含 Agent 版本与开机标识: %d %s", req.path, code, body)
 		}
 	}
 	_, body := e.do("GET", "/api/admin/servers", tok, nil)

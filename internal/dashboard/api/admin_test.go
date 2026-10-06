@@ -538,7 +538,7 @@ func TestAdminListLastSeenUsesLiveReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.api.Hub.Connect(on.ID, 2)
-	e.api.handleReport(context.Background(), on.ID, proto.Report{}, false)
+	e.api.handleReport(context.Background(), on.ID, proto.Report{})
 
 	code, body := e.do("GET", "/api/admin/servers", e.adminToken(), nil)
 	if code != http.StatusOK {

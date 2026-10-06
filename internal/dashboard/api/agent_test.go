@@ -204,7 +204,7 @@ func TestTouchOnlineWritesLastSeen(t *testing.T) {
 	on := e.addServer(store.Server{Name: "on"})
 	off := e.addServer(store.Server{Name: "off"})
 	e.api.Hub.Connect(on.ID, 2)
-	e.api.handleReport(context.Background(), on.ID, proto.Report{}, false)
+	e.api.handleReport(context.Background(), on.ID, proto.Report{})
 	e.api.touchOnline(context.Background())
 	got, _ := e.st.GetServer(context.Background(), on.ID)
 	if got.LastSeen != e.clock.Now().Unix() {
@@ -282,22 +282,15 @@ func TestRebootAndIPChangeEvents(t *testing.T) {
 		t.Fatalf("应记录 IPv4 变化 %+v", list)
 	}
 
-	e.api.Hub.Connect(s.ID, 2)
-	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 100}, true)
-	if got, _ := e.st.GetServer(ctx, s.ID); got.BootAt != e.clock.Now().Unix()-100 || len(events(incident.KindReboot)) != 0 {
-		t.Fatalf("首次只记录开机时间 %d", got.BootAt)
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "2.2.2.2", BootID: "boot-1"}) // 旧版升级后首次带开机标识
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "2.2.2.2", BootID: "boot-1"}) // Agent 重连，同一次开机
+	if len(events(incident.KindReboot)) != 0 {
+		t.Fatal("开机标识未变化不应记录重启")
 	}
 	e.clock.Add(time.Hour)
-	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 30}, false)
-	if len(events(incident.KindReboot)) != 0 {
-		t.Fatal("非连接后的第一次上报不判断重启")
-	}
-	e.api.handleReport(ctx, s.ID, proto.Report{Uptime: 60}, true)
-	boot := e.clock.Now().Unix() - 60
-	if list := events(incident.KindReboot); len(list) != 1 || list[0].StartAt != boot || list[0].EndAt == nil || *list[0].EndAt != boot {
-		t.Fatalf("应记录重启，时间为开机时间 %+v", list)
-	}
-	if cached, _ := e.api.server(s.ID); cached.BootAt != boot {
-		t.Fatalf("缓存中的开机时间未同步 %d", cached.BootAt)
+	e.api.handleHello(ctx, s.ID, "9.9.9.9", proto.Hello{IPv4: "2.2.2.2", BootID: "boot-2"})
+	now := e.clock.Now().Unix()
+	if list := events(incident.KindReboot); len(list) != 1 || list[0].StartAt != now || list[0].EndAt == nil || *list[0].EndAt != now {
+		t.Fatalf("应记录重启，时间为发现时间 %+v", list)
 	}
 }

@@ -265,7 +265,6 @@ export const zhCN = {
     ongoing: '进行中',
     detail: '详情',
     loadDetail: '峰值 {{peak}}%（阈值 {{threshold}}%，{{minutes}} 分钟均值）',
-    bootAt: '开机于 {{time}}',
     notify: '通知记录',
     server: '服务器',
     allServers: '全部服务器',

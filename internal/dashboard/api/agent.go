@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -192,7 +191,6 @@ func (a *API) agentPinger(ctx context.Context, conn *websocket.Conn, ac *agentCo
 }
 
 func (a *API) agentReadLoop(ctx context.Context, conn *websocket.Conn, id, ip string) {
-	first := true // 本次连接的第一次上报，用于判断重启
 	for {
 		_, b, err := conn.Read(ctx)
 		if err != nil {
@@ -221,8 +219,7 @@ func (a *API) agentReadLoop(ctx context.Context, conn *websocket.Conn, id, ip st
 				a.Log.Warn("忽略无效的 report", "id", id, "err", err)
 				continue
 			}
-			a.handleReport(ctx, id, r, first)
-			first = false
+			a.handleReport(ctx, id, r)
 		default:
 			a.Log.Debug("忽略未知 Agent 消息", "id", id, "type", env.Type)
 		}
@@ -234,8 +231,14 @@ func (a *API) handleHello(ctx context.Context, id, ip string, h proto.Hello) {
 	if !ok {
 		return
 	}
+	now := a.Now().Unix()
+	if incident.Rebooted(srv.StaticInfo, h) {
+		if err := a.events.Instant(ctx, id, incident.KindReboot, now, nil); err != nil {
+			a.Log.Warn("记录重启失败", "id", id, "err", err)
+		}
+	}
 	if ips := incident.IPChanges(srv.StaticInfo, h); len(ips) > 0 {
-		if err := a.events.Instant(ctx, id, incident.KindIPChange, a.Now().Unix(), ips); err != nil {
+		if err := a.events.Instant(ctx, id, incident.KindIPChange, now, ips); err != nil {
 			a.Log.Warn("记录 IP 变化失败", "id", id, "err", err)
 		}
 	}
@@ -286,44 +289,16 @@ func (a *API) pushConfig(id string) {
 	a.agents.send(id, b)
 }
 
-// handleReport 处理一次上报：更新实时状态、历史与流量；first 为本次连接的第一次上报时检查是否重启
-func (a *API) handleReport(ctx context.Context, id string, r proto.Report, first bool) {
+// handleReport 处理一次上报：更新实时状态、历史与流量
+func (a *API) handleReport(ctx context.Context, id string, r proto.Report) {
 	srv, ok := a.server(id)
 	if !ok {
 		return
-	}
-	if first {
-		a.checkReboot(ctx, srv, r.Uptime)
 	}
 	r.Normalize()
 	p := a.Hub.Report(id, r)
 	a.History.Add(id, p)
 	if err := a.Traffic.Add(ctx, id, srv.TrafficResetDay, r.FilterID, r.NetInTotal, r.NetOutTotal); err != nil {
 		a.Log.Warn("累计流量失败", "id", id, "err", err)
-	}
-}
-
-// checkReboot 由运行时长推算开机时间（以 Dashboard 时间为准），与记录值比较，变化时更新记录，重启时记录事件
-func (a *API) checkReboot(ctx context.Context, srv store.Server, uptime uint64) {
-	if uptime == 0 || uptime > math.MaxInt64 {
-		return
-	}
-	boot := a.Now().Unix() - int64(uptime)
-	if boot <= 0 { // 超过当前时间戳的运行时长不可信
-		return
-	}
-	save, rebooted := incident.BootCheck(srv.BootAt, boot)
-	if !save {
-		return
-	}
-	if err := a.Store.SetBootAt(ctx, srv.ID, boot); err != nil {
-		a.Log.Warn("保存开机时间失败", "id", srv.ID, "err", err)
-		return
-	}
-	a.updateCached(srv.ID, func(s *store.Server) { s.BootAt = boot })
-	if rebooted {
-		if err := a.events.Instant(ctx, srv.ID, incident.KindReboot, boot, incident.RebootDetail{BootAt: boot}); err != nil {
-			a.Log.Warn("记录重启失败", "id", srv.ID, "err", err)
-		}
 	}
 }

@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLang } from '@/i18n/use-lang'
 import { adminApi, adminKeys } from '@/lib/admin-api'
 import { errorMessage } from '@/lib/api'
-import { formatDateTime, formatDuration, type Lang } from '@/lib/format'
+import { formatDateTime, formatDuration } from '@/lib/format'
 import type { AdminEvent, EventKind, NotifyLogStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -38,7 +38,7 @@ const KIND_DOT: Record<EventKind, string> = {
 }
 
 /** EventDetailText 按类型格式化事件详情 */
-function EventDetailText({ e, lang }: { e: AdminEvent; lang: Lang }) {
+function EventDetailText({ e }: { e: AdminEvent }) {
   const { t } = useTranslation()
   const d = e.detail
   switch (e.kind) {
@@ -46,8 +46,6 @@ function EventDetailText({ e, lang }: { e: AdminEvent; lang: Lang }) {
     case 'load_mem':
     case 'load_disk':
       return t('events.loadDetail', { peak: (d.peak ?? 0).toFixed(1), threshold: d.threshold, minutes: d.minutes })
-    case 'reboot':
-      return d.boot_at ? t('events.bootAt', { time: formatDateTime(d.boot_at, lang) }) : ''
     case 'ip_change':
       return (['ipv4', 'ipv6'] as const)
         .flatMap((k) => {
@@ -217,7 +215,7 @@ export function EventsPage() {
                           </>
                         )}
                       </TableCell>
-                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell"><EventDetailText e={e} lang={lang} /></TableCell>
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell"><EventDetailText e={e} /></TableCell>
                     </TableRow>
                   )
                 })}

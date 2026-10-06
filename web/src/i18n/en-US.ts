@@ -276,7 +276,6 @@ export const enUS: EnDict = {
     ongoing: 'ongoing',
     detail: 'Details',
     loadDetail: 'Peak {{peak}}% (threshold {{threshold}}%, {{minutes}}-min average)',
-    bootAt: 'Booted at {{time}}',
     notify: 'Notifications',
     server: 'Server',
     allServers: 'All servers',

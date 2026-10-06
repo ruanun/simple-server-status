@@ -38,13 +38,14 @@
 |---|---|---|---|---|
 | `offline` | 时段 | 离线满 1 分钟（沿用现有门槛与 2 分钟启动宽限期），开始时间取最后一次上报 | 恢复后第一次上报 | `{}` |
 | `load_cpu` / `load_mem` / `load_disk` | 时段 | 最近 `LoadMinutes` 分钟均值 ≥ 阈值 | 均值 < 阈值 | `{"threshold":90,"peak":97.2}`，峰值为事件期间窗口均值的最大值 |
-| `reboot` | 瞬时 | 开机时间（Dashboard 当前时间 − uptime）比记录值晚 2 分钟以上 | 同开始 | `{"boot_at":…}` |
+| `reboot` | 瞬时 | hello 中的 `boot_id` 与上次不同 | 同开始 | `{}` |
 | `ip_change` | 瞬时 | hello 中的 `IPv4` 或 `IPv6` 与上次不同 | 同开始 | `{"ipv4":["旧","新"]}`，只包含变化的一项 |
 
 判定细节：
 
 - 负载按指标拆分，各自开始、各自恢复；离线期间负载事件保持原状态（数据中断不等于恢复）。窗口内少于 2 个点时不判定，Dashboard 重启后会等数据攒够再判断。
-- `reboot`：开机时间持久化在 `servers.boot_at`（0 表示尚无记录，只记录不产生事件）。每个连接会话只在第一次上报时判定；开机时间用 Dashboard 时间计算，不受 Agent 时钟影响。
+- `reboot`：Agent 在 hello 中上报本次开机的唯一标识 `boot_id`（Linux `/proc/sys/kernel/random/boot_id`；Windows 注册表 `PrefetchParameters\BootId`，每次开机加一；macOS `kern.bootsessionuuid`；FreeBSD 为空），与上次保存的静态信息比较，变化即重启，任一方为空不判断。事件时间为发现时间。不依赖任何一方的时钟。
+  - 最初版本（beta.7）用「Dashboard 时间 − uptime」推算开机时间并与记录值比较，Dashboard 校时后所有服务器同时被误判为重启，且事件时间取开机时间，开机超过 90 天的事件一写入即被清理；beta.8 改为 `boot_id`，迁移 005 删除 `servers.boot_at`。
 - `ip_change`：旧值或新值为空时不算变化（公网探测失败）。hello 只在每次连接时发送一次，变化频率受重连约束，不需要去抖。
 - 静音不影响记录，只影响推送。
 
@@ -71,7 +72,6 @@ DROP TABLE outages;
 DELETE FROM settings WHERE key IN ('notify_load_cpu', 'notify_load_mem', 'notify_load_disk', 'notify_load_minutes');
 
 ALTER TABLE notify_log ADD COLUMN event_id INTEGER;  -- 提醒与测试通知为 NULL
-ALTER TABLE servers ADD COLUMN boot_at INTEGER NOT NULL DEFAULT 0;
 ```
 
 - `store/outages.go` 删除，由 `store/events.go` 取代；`Outage` 类型与相关方法随之移除。
@@ -105,7 +105,7 @@ incident.Detector ───────┼─→ incident.Recorder ──写库�
 ### 4.3 上报处理
 
 - `handleHello`：保存前用缓存中的旧 `StaticInfo` 比较 IP，变化时记录 `ip_change`。
-- `handleReport`：会话内第一次上报时计算开机时间，与 `servers.boot_at` 比较，记录 `reboot` 并更新 `boot_at`。
+- `handleHello`：保存前比较新旧 `boot_id`，变化时记录 `reboot`。
 
 ### 4.4 `Notifier`
 
@@ -162,7 +162,7 @@ incident.Detector ───────┼─→ incident.Recorder ──写库�
 
 1. **存储与 Recorder**：迁移 004（`004_incidents.sql`）、store 方法、`incident.Recorder`；`outage.Tracker` 改为 `incident.Detector` 并通过 Recorder 写入离线。
 2. **检测与通知**：Detector 增加负载判定；Notifier 改为订阅事件，删除离线 / 负载状态机；检测规则设置。现有通知测试改写后保持覆盖：离线延迟、恢复只在推送过后发送、静音不补发、渠道启用前的事件不补发、Dashboard 重启后恢复通知仍能发出。
-3. **重启与 IP 变化**：`boot_at`、hello / report 中的判定及推送开关。
+3. **重启与 IP 变化**：hello 中的判定及推送开关。
 4. **接口、前端与文档**：`/api/admin/events`、事件页、设置页、`docs/api.md`、`docs/configuration.md`、CHANGELOG。
 
 每一步都跑 CLAUDE.md 要求的全部检查。

@@ -322,7 +322,7 @@ func TestSwitchesAndNoChannels(t *testing.T) {
 	if err := e.rec.Instant(ctx, "s1", incident.KindIPChange, now, map[string][2]string{"ipv4": {"1.1.1.1", "2.2.2.2"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.rec.Instant(ctx, "s1", incident.KindReboot, now, incident.RebootDetail{BootAt: now}); err != nil {
+	if err := e.rec.Instant(ctx, "s1", incident.KindReboot, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	e.pump(n)
@@ -333,7 +333,7 @@ func TestSwitchesAndNoChannels(t *testing.T) {
 	expectNone(t, e.events) // 负载与 IP 变化的开关已关闭
 
 	e.src.update(func(c *store.NotifySettings) { c.WebhookURL = "" })
-	if err := e.rec.Instant(ctx, "s1", incident.KindReboot, now+600, incident.RebootDetail{BootAt: now + 600}); err != nil {
+	if err := e.rec.Instant(ctx, "s1", incident.KindReboot, now+600, nil); err != nil {
 		t.Fatal(err)
 	}
 	e.pump(n)

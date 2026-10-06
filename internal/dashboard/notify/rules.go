@@ -50,7 +50,6 @@ type Event struct {
 	Time       int64
 	Minutes    int64                // offline：已离线分钟数；recovered：离线时长；load / load_recovered：统计窗口分钟数
 	Load       LoadValue            // load：超过阈值的指标与峰值；load_recovered：恢复的指标
-	BootAt     int64                // reboot：开机时间
 	IPs        map[string][2]string // ip_change：变化的地址，键为 ipv4、ipv6，值为 [旧, 新]
 	Days       int                  // expire：剩余天数（≤0 表示已过期）
 	ExpireAt   int64                // expire：到期时间
@@ -149,9 +148,7 @@ func fromIncident(ev store.Event, srv store.Server, now time.Time, recovered boo
 			e.Kind = KindLoadRecovered
 		}
 	case ev.Kind == incident.KindReboot:
-		var d incident.RebootDetail
-		_ = json.Unmarshal(ev.Detail, &d)
-		e.Kind, e.BootAt = KindReboot, d.BootAt
+		e.Kind = KindReboot
 	case ev.Kind == incident.KindIPChange:
 		_ = json.Unmarshal(ev.Detail, &e.IPs)
 		e.Kind = KindIPChange

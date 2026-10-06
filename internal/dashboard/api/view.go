@@ -88,8 +88,7 @@ func (a *API) views(ctx context.Context, includeHidden bool) []ServerView {
 	return list
 }
 
-// publicMetrics 复制上报数据并清空仅供内部统计使用的字段，避免泄露网卡过滤配置
-// publicStatic 复制静态信息并清空 Agent 版本与公网地址：版本号与地址只在后台显示，避免公开暴露可利用的信息
+// publicStatic 复制静态信息并清空 Agent 版本、公网地址与开机标识：这些只在后台使用，避免公开暴露可利用的信息
 func publicStatic(h *proto.Hello) *proto.Hello {
 	if h == nil {
 		return nil
@@ -97,9 +96,11 @@ func publicStatic(h *proto.Hello) *proto.Hello {
 	c := *h
 	c.AgentVersion = ""
 	c.IPv4, c.IPv6 = "", ""
+	c.BootID = ""
 	return &c
 }
 
+// publicMetrics 复制上报数据并清空仅供内部统计使用的字段，避免泄露网卡过滤配置
 func publicMetrics(r *proto.Report) *proto.Report {
 	if r == nil {
 		return nil

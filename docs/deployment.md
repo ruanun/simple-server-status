@@ -322,6 +322,8 @@ Dashboard 与 Agent 默认只输出到标准输出，不写文件，日志位置
 
 首次启动生成的 admin 密码也在日志中：`docker logs sss-dashboard 2>&1 | grep password` 或 `journalctl -u sss-dashboard | grep password`。
 
+登录记录同样在日志中：每次登录成功与失败都会记下来源 IP、用户名与失败原因，用 `docker logs sss-dashboard 2>&1 | grep 登录` 或 `journalctl -u sss-dashboard | grep 登录` 查看。被限流拒绝的请求（`too_many_attempts`、`login_busy`）只在 `debug` 级别记录，避免被攻击时刷屏。容器删除重建（如升级）后 `docker logs` 中的旧日志会丢失，需要长期留存时按下文设置日志文件。
+
 需要日志文件时设置 `--log-file`（或 `SSS_LOG_FILE`），设置后同时输出到标准输出与文件，文件按 10 MB 轮转，保留 5 份、30 天：
 
 - systemd：路径放在 `/var/lib/sss` 下，用 `sudo systemctl edit sss-dashboard` 写入 `Environment=SSS_LOG_FILE=/var/lib/sss/dashboard.log` 后重启。

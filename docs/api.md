@@ -45,6 +45,7 @@ Dashboard 对外提供三类接口：浏览器使用的 HTTP 接口、浏览器�
   - 同一来源 5 分钟内失败 5 次后锁定 5 分钟。来源按 IPv4 地址或 IPv6 的 /64 网段区分。
   - 近期（30 天内）未成功登录过的来源，5 分钟内合计尝试超过 30 次后，暂时拒绝这些来源（`login_busy`），防止换 IP 爆破；成功登录过的来源不受影响。以上记录保存在内存中，重启后清空。
   - 位于反向代理之后时需配置 `--trusted-proxies`，否则所有请求共用代理的 IP。
+  - 登录成功与失败均写入 Dashboard 日志（来源 IP、用户名、失败原因），被限流拒绝的请求只在 `debug` 级别记录，见 [查看日志](deployment.md#查看日志)。
 - 登录验证码：在后台「设置 → 账号与安全」中选择不启用、图形验证码或 Cloudflare Turnstile。启用后，登录页先调用 `GET /api/auth/captcha` 获取验证码，并随登录请求提交。验证码在限流之后校验，填错验证码同样计为一次登录失败。
   - 图形验证码保存在内存中，5 分钟内有效，无论对错只能使用一次，不区分大小写。同一来源每分钟最多获取 20 次，超出返回 `captcha_rate_limited`。
   - Turnstile 的 token 由 Dashboard 调用 Cloudflare 核验，因此 Dashboard 需要能访问 `challenges.cloudflare.com`。

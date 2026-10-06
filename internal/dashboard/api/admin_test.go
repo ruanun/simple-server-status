@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -48,6 +49,56 @@ func TestLoginFlowAndRateLimit(t *testing.T) {
 	}
 	if code, body := e.do("GET", "/api/auth/me", tok, nil); code != http.StatusOK || !strings.Contains(string(body), "admin") {
 		t.Fatalf("me = %d %s", code, body)
+	}
+}
+
+// lockedBuffer 并发安全的日志缓冲（日志在服务端 goroutine 中写入）
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestLoginLogsAttempts(t *testing.T) {
+	var out lockedBuffer
+	e := newTestEnv(t, func(d *Deps) {
+		d.Log = slog.New(slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	})
+	e.adminToken()
+	if code, _ := login(t, e, "password123"); code != http.StatusOK {
+		t.Fatalf("登录应成功，实际 %d", code)
+	}
+	if !strings.Contains(out.String(), `level=INFO msg=登录成功 ip=127.0.0.1 username=admin`) {
+		t.Fatalf("登录成功应记录来源：\n%s", out.String())
+	}
+	long := strings.Repeat("中", 100)
+	e.do("POST", "/api/auth/login", "", gin.H{"username": long, "password": "wrong"})
+	for i := 0; i < 4; i++ {
+		login(t, e, "wrong")
+	}
+	if code, _ := login(t, e, "password123"); code != http.StatusTooManyRequests {
+		t.Fatalf("连续失败后应限流，实际 %d", code)
+	}
+	logs := out.String()
+	if n := strings.Count(logs, `level=WARN msg=登录失败 ip=127.0.0.1`); n != 5 {
+		t.Fatalf("5 次失败应各记一条 warn，实际 %d：\n%s", n, logs)
+	}
+	if strings.Contains(logs, long) || !strings.Contains(logs, strings.Repeat("中", 64)+"…") {
+		t.Fatalf("超长用户名应截断：\n%s", logs)
+	}
+	if !strings.Contains(logs, `level=DEBUG msg=登录失败 ip=127.0.0.1 username=admin reason=too_many_attempts`) {
+		t.Fatalf("被限流拒绝的请求应记 debug：\n%s", logs)
 	}
 }
 

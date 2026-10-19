@@ -50,7 +50,7 @@ docker logs sss-dashboard 2>&1 | grep password   # 首次生成的 admin 密码
 
 ## 本地开发
 
-需要 Go 1.24+、Node.js 22+、pnpm 10。
+需要 Go 1.26+、Node.js 22+、pnpm 10。
 
 ```bash
 make help          # 列出全部命令

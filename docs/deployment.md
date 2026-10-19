@@ -371,7 +371,7 @@ docker start sss-dashboard
 
 ## 从源码构建
 
-需要 Go 1.24+、Node.js 22+、pnpm 10。
+需要 Go 1.26+、Node.js 22+、pnpm 10。
 
 ```bash
 make build

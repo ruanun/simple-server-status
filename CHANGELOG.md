@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [2.0.0] - 2026-10-19
+## [2.0.0] - 2026-10-20
 
 整体重写，不兼容 1.x 的配置与数据，升级步骤见 [部署 · 从 1.x 升级](docs/deployment.md#从-1x-升级)。
 

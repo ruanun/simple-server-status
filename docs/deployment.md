@@ -376,7 +376,26 @@ docker start sss-dashboard
 1. 记下 1.x `sss-dashboard.yaml` 中的服务器名称、分组与国家代码。
 2. 按上文部署 2.0 Dashboard。Docker 部署请换用本文的启动命令或 `deployments/docker/docker-compose.yml`：数据保存在 `/app/data` 卷中，不再挂载配置文件；1.x compose 中的健康检查地址 `/api/statistics` 已不存在，沿用会使容器一直显示 unhealthy。
 3. 登录后台，在「服务器」页逐台新建服务器。
-4. 在每台机器上执行后台给出的安装命令，确认上线后停用 1.x Agent：Linux 执行 `sudo systemctl disable --now sssa`（1.x 默认的服务名），再删除 1.x 的服务文件与 `/opt/sss-agent` 目录；Windows 上若曾把 1.x 注册为服务或计划任务，先将其停用，再删除 `C:\sss-agent`（若存在）。
+4. 在每台机器上先清理 1.x Agent，再执行后台给出的安装命令。以下为 1.x 安装脚本的默认位置，手动部署过的按实际路径处理。
+
+   Linux：
+
+   ```bash
+   sudo systemctl disable --now sssa
+   sudo rm -f /etc/systemd/system/sssa.service && sudo systemctl daemon-reload
+   sudo rm -rf /etc/sssa
+   ```
+
+   1.x 留下的 `/usr/local/bin/sss-agent` 符号链接会被 2.0 安装脚本替换为新程序，无需处理。
+
+   Windows（管理员 PowerShell）：1.x 的服务 `SSSA` 与 2.0 服务的显示名相同，不先删除时 2.0 无法创建服务。
+
+   ```powershell
+   Stop-Service SSSA -Force -ErrorAction SilentlyContinue; sc.exe delete SSSA
+   Remove-Item 'C:\Program Files\SSSA' -Recurse -Force
+   ```
+
+   1.x 还把 `C:\Program Files\SSSA` 加入了系统 PATH，可在「系统属性 → 环境变量」中删除该项。
 
 `ruanun/sssd:latest` 自 2.0.0 起指向 2.x。用 Watchtower 等工具自动拉取 `latest` 的 1.x 部署会被直接替换为 2.0，暂不升级时请把镜像固定为 `ruanun/sssd:1`。
 

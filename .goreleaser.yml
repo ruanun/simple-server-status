@@ -104,4 +104,6 @@ release:
 
     **Agent**：登录后台 → 服务器 → 新建或点「安装命令」，复制 Linux / Windows 一键命令到目标机器执行。
 
-    完整文档见 [README](https://github.com/ruanun/simple-server-status/blob/master/README.md)。
+    完整文档见 [README](https://github.com/ruanun/simple-server-status/blob/master/README.md)，各版本变更见 [CHANGELOG](https://github.com/ruanun/simple-server-status/blob/master/CHANGELOG.md)。
+
+    2.0 不兼容 1.x 的配置与数据，从 1.x 升级见 [部署 · 从 1.x 升级](https://github.com/ruanun/simple-server-status/blob/master/docs/deployment.md#从-1x-升级)。

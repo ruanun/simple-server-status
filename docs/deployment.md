@@ -1,6 +1,6 @@
 # 部署
 
-本文分为 Dashboard 部署、反向代理、Agent 安装、升级与备份、从源码构建五部分。参数的完整说明见 [配置](configuration.md)。
+本文分为 Dashboard 部署、反向代理、Agent 安装、服务管理、查看日志、升级与备份、从 1.x 升级、从源码构建几部分。参数的完整说明见 [配置](configuration.md)。
 
 发布资产的下载地址：
 
@@ -349,7 +349,7 @@ Linux 需要日志文件时，在 `/etc/sss/sss-agent.yaml` 中设置 `log_file:
 - 二进制：下载新版归档，替换 `/usr/local/bin/sss-dashboard` 后 `sudo systemctl restart sss-dashboard`。
 - Agent：重新执行后台的安装命令即可（Agent 的采集参数由 Dashboard 下发，无需改配置）。
 
-从 1.x 升级后，旧版目录不会被自动清理，可手动删除：Linux 为 `/opt/sss-agent`，Windows（若存在）为 `C:\sss-agent`。
+从 1.x 升级见 [下文](#从-1x-升级)。
 
 **备份**
 
@@ -368,6 +368,17 @@ docker start sss-dashboard
 ```
 
 也可以在后台「设置 → 备份与迁移」导出 JSON，内容为站点设置和全部服务器（含 Agent 密钥），不含历史数据与流量统计。在新 Dashboard 导入后，服务器 ID 与密钥保持不变：面板地址不变（如沿用同一域名）时 Agent 无需任何改动；地址变化时修改 Agent 配置中的 `dashboard` 并重启，或重新执行安装命令。**导出文件包含密钥，请妥善保管。**
+
+## 从 1.x 升级
+
+2.0 是整体重写：不读取 1.x 的 `sss-dashboard.yaml`，也不迁移 1.x 的任何数据，1.x 的 Agent 无法连接 2.0 Dashboard。升级需要重新部署 Dashboard 并重装全部 Agent：
+
+1. 记下 1.x `sss-dashboard.yaml` 中的服务器名称、分组与国家代码。
+2. 按上文部署 2.0 Dashboard。Docker 部署请换用本文的启动命令或 `deployments/docker/docker-compose.yml`：数据保存在 `/app/data` 卷中，不再挂载配置文件；1.x compose 中的健康检查地址 `/api/statistics` 已不存在，沿用会使容器一直显示 unhealthy。
+3. 登录后台，在「服务器」页逐台新建服务器。
+4. 在每台机器上执行后台给出的安装命令，确认上线后停用 1.x Agent：Linux 执行 `sudo systemctl disable --now sssa`（1.x 默认的服务名），再删除 1.x 的服务文件与 `/opt/sss-agent` 目录；Windows 上若曾把 1.x 注册为服务或计划任务，先将其停用，再删除 `C:\sss-agent`（若存在）。
+
+`ruanun/sssd:latest` 自 2.0.0 起指向 2.x。用 Watchtower 等工具自动拉取 `latest` 的 1.x 部署会被直接替换为 2.0，暂不升级时请把镜像固定为 `ruanun/sssd:1`。
 
 ## 从源码构建
 
